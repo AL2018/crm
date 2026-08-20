@@ -830,7 +830,7 @@ function setupNewQuickFilters(filters) {
 }
 
 function applyQuickFilter(filter, value) {
-  let filters = { ...list.value.params.filters }
+  let filters = { ...list.value.params?.filters }
   let field = filter.fieldname
   if (value) {
     if (
@@ -1268,7 +1268,7 @@ function applyFilter({ event, idx, column, item, firstColumn }) {
   event.stopPropagation()
   event.preventDefault()
 
-  let filters = { ...list.value.params.filters }
+  let filters = { ...list.value.params?.filters }
 
   let value = item.name ?? item.label ?? item
 
@@ -1293,7 +1293,7 @@ function applyFilter({ event, idx, column, item, firstColumn }) {
 }
 
 function applyLikeFilter() {
-  let filters = { ...list.value.params.filters }
+  let filters = { ...list.value.params?.filters }
   if (!filters._liked_by) {
     filters['_liked_by'] = ['LIKE', '%@me%']
   } else {
