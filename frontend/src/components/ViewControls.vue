@@ -560,6 +560,11 @@ function updateSelections(selections) {
 }
 
 async function exportRows() {
+  // `list.value.params` is null until a fetch assigns it, and this function reads it three times
+  // (filters, order_by, page_length). Populate it the same way `updateFilter` does rather than
+  // optional-chaining each read, which would put a literal `undefined` into the export URL.
+  if (!list.value.params) list.value.params = getParams()
+
   let fields = JSON.stringify(list.value.data.columns.map((f) => f.key))
 
   let filters = JSON.stringify({
