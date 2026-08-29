@@ -53,10 +53,20 @@
                entirely and must use an href, not `:to`. The Notifications item above is the
                existing precedent for an entry with a click handler and no route.
 
-               Gated on the same three roles the desk page itself grants (Sales User, Sales
-               Manager, System Manager). Measured on the bench: 13 of 14 enabled System Users
-               hold one of them, and the fourteenth — marketing@ — would have been shown a link
-               straight into a permission error. -->
+               Gated on the same roles the desk page itself grants. The server collapses a user's
+               CRM roles to the highest held (see crm/api/session.py), so isSalesUser() ||
+               isManager() is set-equal to "holds Sales User, Sales Manager or System Manager".
+               The page enforces this again server-side; the gate is about not offering a dead
+               link, not about access.
+
+               ⚠️ AND THIS ROUTE IS OWNED BY ANOTHER APP. The page lives in `lc_winnow`, not here,
+               and nothing in this repo declares that dependency or checks it at runtime. There is
+               no existence check a Sales User could make: `Page` is readable only by System
+               Manager, and `frappe.apps.get_apps` lists only apps on the apps screen, which
+               `lc_winnow` is not on. A guard built from either would hide the link from exactly
+               the people who need it. So the coupling is recorded here instead: uninstall
+               `lc_winnow`, or rename that page, and this becomes a link to a desk 404 for every
+               CRM user. -->
           <SidebarItem
             v-if="canSeeAttention"
             :label="__('Needs attention')"
@@ -440,9 +450,10 @@ function toggleHelpModal() {
 const { user } = sessionStore()
 const { users, isManager, isSalesUser } = usersStore()
 
-// `isManager` is Sales Manager OR System Manager, `isSalesUser` is Sales User — together they are
-// exactly the role list on the `attention` desk page. A link nobody can follow is worse than no
-// link, and the page enforces this again server-side regardless of what the sidebar shows.
+// `isManager` is Sales Manager OR System Manager, `isSalesUser` is Sales User — together exactly
+// the role list on the `attention` desk page. `getUser()` with no argument resolves to the session
+// user and returns a `role: null` stub before the user list loads, so this fails CLOSED: the item
+// is absent for a moment on a cold load rather than appearing for someone who may not follow it.
 const canSeeAttention = computed(() => isSalesUser() || isManager())
 
 function openAttention() {
