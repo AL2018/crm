@@ -48,6 +48,35 @@
             </template>
           </SidebarItem>
 
+          <!-- ⚠️ NOT A ROUTER LINK. Every other entry here is a vue-router `name` inside this SPA;
+               "Needs attention" is a DESK page at /app/attention, so it navigates out of the app
+               entirely and must use an href, not `:to`. The Notifications item above is the
+               existing precedent for an entry with a click handler and no route.
+
+               Gated on the same roles the desk page itself grants. The server collapses a user's
+               CRM roles to the highest held (see crm/api/session.py), so isSalesUser() ||
+               isManager() is set-equal to "holds Sales User, Sales Manager or System Manager".
+               The page enforces this again server-side; the gate is about not offering a dead
+               link, not about access.
+
+               ⚠️ AND THIS ROUTE IS OWNED BY ANOTHER APP. The page lives in `lc_winnow`, not here,
+               and nothing in this repo declares that dependency or checks it at runtime. There is
+               no existence check a Sales User could make: `Page` is readable only by System
+               Manager, and `frappe.apps.get_apps` lists only apps on the apps screen, which
+               `lc_winnow` is not on. A guard built from either would hide the link from exactly
+               the people who need it. So the coupling is recorded here instead: uninstall
+               `lc_winnow`, or rename that page, and this becomes a link to a desk 404 for every
+               CRM user. -->
+          <SidebarItem
+            v-if="canSeeAttention"
+            :label="__('Needs attention')"
+            @click="openAttention"
+          >
+            <template #prefix>
+              <InboxIcon class="size-4 text-ink-gray-7" />
+            </template>
+          </SidebarItem>
+
           <CollapsibleSection
             v-for="section in allViews"
             :key="section.name"
@@ -194,6 +223,7 @@ import TaskIcon from '@/components/Icons/TaskIcon.vue'
 import PhoneIcon from '@/components/Icons/PhoneIcon.vue'
 import CollapseSidebar from '@/components/Icons/CollapseSidebar.vue'
 import NotificationsIcon from '@/components/Icons/NotificationsIcon.vue'
+import InboxIcon from '@/components/Icons/InboxIcon.vue'
 import HelpIcon from '@/components/Icons/HelpIcon.vue'
 import Notifications from '@/components/Notifications.vue'
 import Settings from '@/components/Settings/Settings.vue'
@@ -418,7 +448,17 @@ function toggleHelpModal() {
 
 // onboarding
 const { user } = sessionStore()
-const { users, isManager } = usersStore()
+const { users, isManager, isSalesUser } = usersStore()
+
+// `isManager` is Sales Manager OR System Manager, `isSalesUser` is Sales User — together exactly
+// the role list on the `attention` desk page. `getUser()` with no argument resolves to the session
+// user and returns a `role: null` stub before the user list loads, so this fails CLOSED: the item
+// is absent for a moment on a cold load rather than appearing for someone who may not follow it.
+const canSeeAttention = computed(() => isSalesUser() || isManager())
+
+function openAttention() {
+  window.location.href = '/app/attention'
+}
 const { isOnboardingStepsCompleted, setUp } = useOnboarding('frappecrm')
 
 async function getFirstLead() {
