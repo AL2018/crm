@@ -48,6 +48,25 @@
             </template>
           </SidebarItem>
 
+          <!-- ⚠️ NOT A ROUTER LINK. Every other entry here is a vue-router `name` inside this SPA;
+               "Needs attention" is a DESK page at /app/attention, so it navigates out of the app
+               entirely and must use an href, not `:to`. The Notifications item above is the
+               existing precedent for an entry with a click handler and no route.
+
+               Gated on the same three roles the desk page itself grants (Sales User, Sales
+               Manager, System Manager). Measured on the bench: 13 of 14 enabled System Users
+               hold one of them, and the fourteenth — marketing@ — would have been shown a link
+               straight into a permission error. -->
+          <SidebarItem
+            v-if="canSeeAttention"
+            :label="__('Needs attention')"
+            @click="openAttention"
+          >
+            <template #prefix>
+              <InboxIcon class="size-4 text-ink-gray-7" />
+            </template>
+          </SidebarItem>
+
           <CollapsibleSection
             v-for="section in allViews"
             :key="section.name"
@@ -194,6 +213,7 @@ import TaskIcon from '@/components/Icons/TaskIcon.vue'
 import PhoneIcon from '@/components/Icons/PhoneIcon.vue'
 import CollapseSidebar from '@/components/Icons/CollapseSidebar.vue'
 import NotificationsIcon from '@/components/Icons/NotificationsIcon.vue'
+import InboxIcon from '@/components/Icons/InboxIcon.vue'
 import HelpIcon from '@/components/Icons/HelpIcon.vue'
 import Notifications from '@/components/Notifications.vue'
 import Settings from '@/components/Settings/Settings.vue'
@@ -418,7 +438,16 @@ function toggleHelpModal() {
 
 // onboarding
 const { user } = sessionStore()
-const { users, isManager } = usersStore()
+const { users, isManager, isSalesUser } = usersStore()
+
+// `isManager` is Sales Manager OR System Manager, `isSalesUser` is Sales User — together they are
+// exactly the role list on the `attention` desk page. A link nobody can follow is worse than no
+// link, and the page enforces this again server-side regardless of what the sidebar shows.
+const canSeeAttention = computed(() => isSalesUser() || isManager())
+
+function openAttention() {
+  window.location.href = '/app/attention'
+}
 const { isOnboardingStepsCompleted, setUp } = useOnboarding('frappecrm')
 
 async function getFirstLead() {
