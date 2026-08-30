@@ -16,9 +16,25 @@ import { vi } from 'vitest'
 const board = reactive({ data: null, loading: false, reload: vi.fn() })
 const push = vi.fn()
 
+// ⚠️ `FormControl` IS STUBBED AS A REAL INPUT, NOT AS AN INERT PLACEHOLDER. The filter tests
+// exercise typing and selecting, so a stub that swallows `v-model` would turn every one of them
+// green while testing nothing — the shape of coverage this suite exists to avoid. It renders the
+// same element the real control renders and emits the same event, and nothing more.
 vi.mock('frappe-ui', () => ({
   createResource: () => board,
-  Button: { name: 'Button', template: '<button />' },
+  Button: { name: 'Button', template: '<button><slot />{{ label }}</button>', props: ['label'] },
+  FormControl: {
+    name: 'FormControl',
+    props: ['type', 'modelValue', 'options', 'placeholder'],
+    emits: ['update:modelValue'],
+    template: `
+      <select v-if="type === 'select'" :value="modelValue"
+              @change="$emit('update:modelValue', options[$event.target.selectedIndex].value)">
+        <option v-for="o in options" :key="String(o.value)" :value="o.value">{{ o.label }}</option>
+      </select>
+      <input v-else type="search" :value="modelValue" :placeholder="placeholder"
+             @input="$emit('update:modelValue', $event.target.value)" />`,
+  },
 }))
 vi.mock('vue-router', () => ({ useRouter: () => ({ push }) }))
 vi.mock('@/components/LayoutHeader.vue', () => ({
@@ -222,12 +238,15 @@ describe('Attention — search and filter', () => {
     await w.find('input[type="search"]').setValue(text)
     return w
   }
-  // `setValue` on a <select> compares by DOM string; these options bind numbers, so the option
-  // itself is selected instead. 0 = any age, 1 = 2+ days, 2 = 5+ days.
-  const age = async (w, i) => {
-    await w.findAll('option')[i].setSelected()
+  // ⚠️ ADDRESSED BY WHICH SELECT, NOT BY GLOBAL OPTION INDEX. There are three selects now — type,
+  // days and sort — so a flat `findAll('option')[i]` silently started pointing at a different
+  // control the moment one was added, which is a test that moves when the page does.
+  const SELECT = { type: 0, days: 1, sort: 2 }
+  const choose = async (w, which, i) => {
+    await w.findAll('select')[SELECT[which]].findAll('option')[i].setSelected()
     return w
   }
+  const age = (w, i) => choose(w, 'days', i)
 
   it('searches the organisation or person', async () => {
     const w = await type(await render(many()), 'quarry')
@@ -297,8 +316,93 @@ describe('Attention — search and filter', () => {
   })
 
   it('clears back to the whole list', async () => {
+    // The clear control is the native Button now, not a bare underlined link — found by its
+    // label so the test does not depend on which classes the component happens to apply.
     const w = await type(await render(many()), 'quarry')
-    await w.find('button.underline').trigger('click')
+    expect(rows(w)).toHaveLength(1)
+    const clear = w.findAll('button').find((b) => b.text().includes('Clear'))
+    await clear.trigger('click')
     expect(rows(w)).toHaveLength(3)
+  })
+})
+
+/**
+ * rev 4 §1 — Leads and Deals in ONE list, type as a filter.
+ * rev 4 §3 — a sort control on days, both ways, in the native form.
+ */
+describe('Attention — Leads, type and sort', () => {
+  const both = () => payload({
+    total: 4, critical: 0,
+    cards: [
+      card({ deal: 'D1', who: 'D1', subject: '', doctype: 'CRM Deal', age_days: 20, critical: false }),
+      card({ deal: 'L1', who: 'L1', subject: '', doctype: 'CRM Lead', age_days: 13, critical: false }),
+      card({ deal: 'L2', who: 'L2', subject: '', doctype: 'CRM Lead', age_days: 2, critical: false }),
+      card({ deal: 'D2', who: 'D2', subject: '', doctype: 'CRM Deal', age_days: 30, critical: false }),
+    ],
+    stats: { since: '2026-08-25', days: 7, performed: 1, to_go: 4, to_clear: 5 },
+  })
+  const SELECT = { type: 0, days: 1, sort: 2 }
+  const pick = async (w, which, i) => {
+    await w.findAll('select')[SELECT[which]].findAll('option')[i].setSelected()
+    return w
+  }
+  // Match the identifier rather than stripping characters: a strip-list silently drops any
+  // digit it was not told about, which is how `L9` read as `L`.
+  const ids = (w) => rows(w).map((r) => (r.text().match(/[DL]\d/) || [''])[0])
+
+  it('shows Leads and Deals together by default', async () => {
+    expect(ids(await render(both()))).toEqual(['D1', 'L1', 'L2', 'D2'])
+  })
+
+  it('narrows to Deals only, and to Leads only', async () => {
+    const w = await render(both())
+    await pick(w, 'type', 1)
+    expect(ids(w)).toEqual(['D1', 'D2'])
+    await pick(w, 'type', 2)
+    expect(ids(w)).toEqual(['L1', 'L2'])
+  })
+
+  it('counts the filtered type against the whole, and says a filter is on', async () => {
+    const w = await render(both())
+    await pick(w, 'type', 2)
+    expect(w.find('[data-testid="count-to-go"]').text()).toBe('2')
+    expect(w.text()).toContain('of 4')
+    expect(w.text()).toContain('A filter is on')
+  })
+
+  // ⚠️ THE DEFAULT IS THE SERVER'S ORDER, and the option that does nothing SAYS it does nothing —
+  // otherwise the list can sit in an order the rules do not describe with nothing to explain it.
+  it('leaves the server order alone until a sort is chosen, then sorts by days both ways', async () => {
+    const w = await render(both())
+    expect(ids(w)).toEqual(['D1', 'L1', 'L2', 'D2'])
+    await pick(w, 'sort', 1)
+    expect(ids(w)).toEqual(['D2', 'D1', 'L1', 'L2'])
+    await pick(w, 'sort', 2)
+    expect(ids(w)).toEqual(['L2', 'L1', 'D1', 'D2'])
+    await pick(w, 'sort', 0)
+    expect(ids(w)).toEqual(['D1', 'L1', 'L2', 'D2'])
+  })
+
+  // ⚠️ AN UNKNOWN AGE SORTS LAST WHICHEVER WAY THE SORT RUNS. An unknown is not an old thing, and
+  // it is not a new one either — reading it as 0 would put it first on an ascending sort, which is
+  // the same class of defect as the age filter dropping it.
+  it('keeps a row with no readable age last, in both directions', async () => {
+    const p = both()
+    p.cards.push(card({ deal: 'L9', who: 'L9', subject: '', doctype: 'CRM Lead', age_days: null, critical: false }))
+    p.total = 5
+    const w = await render(p)
+    await pick(w, 'sort', 1)
+    expect(ids(w).at(-1)).toBe('L9')
+    await pick(w, 'sort', 2)
+    expect(ids(w).at(-1)).toBe('L9')
+  })
+
+  // ⚠️ SORT IS NOT A FILTER. Sorting changes the order of what is shown; filtering changes what is
+  // shown. Only the second can make a count describe a different set than the list.
+  it('choosing a sort does not claim a filter is on', async () => {
+    const w = await render(both())
+    await pick(w, 'sort', 1)
+    expect(w.text()).not.toContain('A filter is on')
+    expect(w.find('[data-testid="count-to-go"]').text()).toBe('4')
   })
 })

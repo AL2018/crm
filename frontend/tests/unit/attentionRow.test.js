@@ -92,6 +92,18 @@ describe('AttentionRow — rendering', () => {
       .not.toContain('out of date')
   })
 
+  // ⚠️ THE CLASS IS THE BEHAVIOUR HERE, so it is asserted directly. Alan: the yellow has too little
+  // contrast to read. It cannot be fixed by going darker — `ink-amber-3` IS amber-600, the darkest
+  // amber frappe-ui defines, about 3:1 on white against the 4.5:1 small text needs. So amber may
+  // only be a BACKGROUND on this surface. Mutation found this uncovered: putting the old ink token
+  // back left every test green.
+  it('never puts amber ink on text — the colour may only be a background', () => {
+    const w = mount(AttentionRow, { props: { card: card({ state: 'waiting_on_us' }) } })
+    expect(w.html()).not.toContain('text-ink-amber')
+    expect(w.html()).toContain('bg-surface-amber-1')
+    expect(w.html()).toContain('text-ink-gray-8')
+  })
+
   it('says so when a message has no text rather than showing an empty box', async () => {
     const w = mount(AttentionRow, { props: { card: card({ snippet: '' }) } })
     await w.find('button').trigger('click')

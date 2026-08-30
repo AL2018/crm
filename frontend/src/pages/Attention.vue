@@ -58,23 +58,44 @@
          and a round trip per keystroke would make the surface feel slower than the scrolling it
          replaces. If the list ever outgrows that, the filter moves to `get_attention` — and the
          counts move with it. -->
-    <div v-if="board.data?.total" class="mb-2 flex flex-wrap items-center gap-2 text-sm">
-      <input v-model="query" type="search" class="w-64 rounded border border-outline-gray-2 px-2 py-1 text-sm"
-             :placeholder="__('Search organisation, person or subject')" :aria-label="__('Search')" />
-      <select v-model="minDays" class="rounded border border-outline-gray-2 px-2 py-1 text-sm"
-              :aria-label="__('Waiting at least')">
-        <option :value="0">{{ __('Any age') }}</option>
-        <option :value="2">{{ __('2+ days') }}</option>
-        <option :value="5">{{ __('5+ days') }}</option>
-      </select>
-      <button v-if="filtering" class="text-xs text-ink-gray-5 underline" @click="clearFilters">
-        {{ __('Clear filters') }}
-      </button>
-      <!-- ⚠️ §4 IS A REPORT, NOT A FILTER, so there is no type control yet and the absence is
-           stated rather than left as a gap. Leads carry correspondence by both link routes, but
-           0 of 20 open production Leads have any reply recorded — the outbound-capture gap — so a
-           combined list would report almost every enquiry as unanswered. -->
-      <span class="text-xs text-ink-gray-4">{{ __('Deals only — Leads are with the architect') }}</span>
+    <!-- ⚠️ THE NATIVE PATTERN, NOT AN INVENTED ONE — rev 4 §3. Alan: *"filters are a human way of
+         sorting data to find patterns that are complex and not easily codified"*, and he wants the
+         form he already knows from the CRM's list views. The CRM's own `Filter.vue` and
+         `SortBy.vue` are bound to a DOCTYPE and to a list resource's params, and this surface is
+         neither — it is one endpoint returning an assembled list. So the PATTERN is matched with
+         the same primitives those components are built from: `FormControl` fields, a `Button`
+         carrying the count, and a `Select` for sort, arranged as the list-view bar arranges them.
+         Recorded so nobody re-derives it: reusing the components themselves was tried and is not
+         possible without inventing a fake doctype, which would be worse than this. -->
+    <div v-if="board.data?.total" class="mb-2 flex flex-wrap items-center gap-2">
+      <FormControl type="text" :placeholder="__('Search name or subject')" v-model="query"
+                   :aria-label="__('Search')" class="w-64" />
+
+      <FormControl type="select" v-model="typeFilter" :aria-label="__('Type')"
+                   :options="[
+                     { label: __('Leads and Deals'), value: '' },
+                     { label: __('Deals only'), value: 'CRM Deal' },
+                     { label: __('Leads only'), value: 'CRM Lead' },
+                   ]" />
+
+      <FormControl type="select" v-model="minDays" :aria-label="__('Waiting at least')"
+                   :options="[
+                     { label: __('Any age'), value: 0 },
+                     { label: __('2+ days'), value: 2 },
+                     { label: __('5+ days'), value: 5 },
+                   ]" />
+
+      <!-- §3 — a sort control on days, both ways, in the same form. The DEFAULT is the ruled
+           order (§1/§2), and choosing a day sort is an explicit override the label names, so
+           nobody is left wondering why the list is not in the order the rules describe. -->
+      <FormControl type="select" v-model="sortBy" :aria-label="__('Sort')"
+                   :options="[
+                     { label: __('Sort: as ruled'), value: '' },
+                     { label: __('Sort: longest waiting first'), value: 'days_desc' },
+                     { label: __('Sort: shortest waiting first'), value: 'days_asc' },
+                   ]" />
+
+      <Button v-if="filtering" :label="__('Clear')" variant="ghost" @click="clearFilters" />
     </div>
 
     <div v-if="board.loading && !board.data" class="text-sm text-ink-gray-5">{{ __('Loading…') }}</div>
@@ -176,7 +197,7 @@
  */
 import { computed, ref, onActivated, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Button, createResource } from 'frappe-ui'
+import { Button, FormControl, createResource } from 'frappe-ui'
 import LayoutHeader from '@/components/LayoutHeader.vue'
 import AttentionRow from '@/components/AttentionRow.vue'
 
@@ -229,15 +250,25 @@ const degraded = computed(() =>
 // "of N" on the counts is measured against.
 const query = ref('')
 const minDays = ref(0)
-const filtering = computed(() => !!query.value.trim() || minDays.value > 0)
+const typeFilter = ref('')
+//: ⚠️ SORT IS NOT A FILTER, AND IT IS DELIBERATELY NOT COUNTED AS ONE. Sorting changes the ORDER
+//: of what is shown; filtering changes WHAT is shown. Only the second can make a count describe a
+//: different set than the list, which is what the "of N" and the "a filter is on" notice exist
+//: for. Folding sort into `filtering` would put a notice on the page that says nothing is hidden.
+const sortBy = ref('')
+const filtering = computed(() =>
+  !!query.value.trim() || minDays.value > 0 || !!typeFilter.value)
 function clearFilters() {
   query.value = ''
   minDays.value = 0
+  typeFilter.value = ''
+  sortBy.value = ''
 }
 
 const shown = computed(() => {
   const q = query.value.trim().toLowerCase()
-  return allCards.value.filter((c) => {
+  const matched = allCards.value.filter((c) => {
+    if (typeFilter.value && c.doctype !== typeFilter.value) return false
     // ⚠️ AN UNKNOWN AGE IS NOT A YOUNG ONE. A row whose age could not be read must not be
     // silently dropped by an age filter that reads `null` as zero — that is the same class of
     // defect as the unbanded rows vanishing from the list.
@@ -245,6 +276,25 @@ const shown = computed(() => {
     if (!q) return true
     return `${c.who || ''} ${c.subject || ''}`.toLowerCase().includes(q)
   })
+  // ⚠️ THE SERVER'S ORDER IS THE DEFAULT AND SORTING IS AN EXPLICIT OVERRIDE. `sortBy` is empty
+  // unless somebody chose a day sort, and the option that does nothing is labelled "as ruled" so
+  // the list is never silently in an order the rules do not describe.
+  //
+  // ⚠️ THE `[...]` IS DEFENSIVE, AND AN EARLIER COMMENT HERE CLAIMED MORE THAN IT DOES. It said
+  // the copy stops `sort` reordering `allCards` behind the computed's back. It does not: `matched`
+  // is already a fresh array from `.filter()`, so mutating it reaches nothing — mutation proved
+  // it, by removing the spread and finding every test still green. The copy stays because the day
+  // `matched` stops being a filter result it would become true, and the note is corrected rather
+  // than deleted because a justification that overstates itself is how §0.2g happens.
+  if (!sortBy.value) return matched
+  const dir = sortBy.value === 'days_asc' ? -1 : 1
+  return [...matched].sort(
+    (a, b) =>
+      // An unknown age sorts last WHICHEVER WAY the sort runs — an unknown is not an old thing
+      // and it is not a new one either.
+      (a.age_days === null) - (b.age_days === null) ||
+      dir * ((b.age_days || 0) - (a.age_days || 0)),
+  )
 })
 
 // ⚠️ `critical` COUNTS; IT NO LONGER PARTITIONS. Partitioning was what reordered the list. There

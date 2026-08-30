@@ -33,15 +33,25 @@
          never decides whether a row is here. -->
     <span class="hidden w-32 shrink-0 truncate text-xs lg:block"
           :class="card.critical ? 'text-ink-gray-7' : 'text-ink-gray-5'">{{ card.status
-      }}<span v-if="card.status_stale" class="ml-1 text-ink-amber-3"
+      }}<span v-if="card.status_stale" class="ml-1 font-medium text-ink-gray-8"
               :title="__('They have written since this status was set')">{{ __('· out of date') }}</span></span>
 
     <!-- ⚠️ THE WORDS CARRY THE MEANING; THE COLOUR ONLY EMPHASISES IT (rev 3 §8). A critical row
          says "critical" in words, so the list still reads correctly to someone who cannot
-         distinguish the colours. -->
-    <span class="hidden w-28 shrink-0 text-xs md:block"
-          :class="card.state === 'waiting_on_us' ? 'text-ink-amber-3' : 'text-ink-gray-5'">
-      {{ card.state === 'waiting_on_us' ? __('they wrote last') : __('we wrote last') }}
+         distinguish the colours.
+         ⚠️ AND THE AMBER MOVED FROM THE INK TO THE GROUND, WHICH IS THE PALETTE FIX. Alan: the
+         yellow has too little contrast to read. It cannot be fixed by going darker — `ink-amber-3`
+         IS amber-600, the darkest amber frappe-ui defines, and amber-600 on white is about 3:1,
+         under the 4.5:1 small text needs. So the colour became the BACKGROUND and the text became
+         `ink-gray-8`, which reads at 12px and still signals. Applied wherever this surface used
+         amber for text, not just here — see `Attention.vue`. -->
+    <span class="hidden w-28 shrink-0 md:block">
+      <span class="rounded px-1.5 py-0.5 text-xs"
+            :class="card.state === 'waiting_on_us'
+              ? 'bg-surface-amber-1 font-medium text-ink-gray-8'
+              : 'text-ink-gray-5'">
+        {{ card.state === 'waiting_on_us' ? __('they wrote last') : __('we wrote last') }}
+      </span>
     </span>
 
     <span class="w-24 shrink-0 text-right text-xs tabular-nums"
