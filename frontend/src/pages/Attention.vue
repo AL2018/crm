@@ -31,14 +31,50 @@
              a custom `since` produced an all-time count under a "last 7 days" heading. -->
         <span class="ml-1 text-xs text-ink-gray-4">{{ stats.days
           ? __('last {0} days', [stats.days]) : __('since {0}', [stats.since]) }}</span></div>
+      <!-- ⚠️ A COUNT MUST DESCRIBE THE LIST UNDERNEATH IT. With a filter on, `To go` and `Critical`
+           are the FILTERED numbers and say "of N" so the whole is still visible. `To clear` and
+           `Performed` cannot be filtered — a deal that was answered is not on the list to match a
+           search — so they are labelled as covering everything rather than silently describing a
+           different set, which is the shape of defect this estate keeps producing. -->
       <div><span class="text-ink-gray-5">{{ __('To go') }}</span>
-        <span class="ml-1.5 font-medium text-ink-gray-8">{{ stats.to_go }}</span></div>
+        <span data-testid="count-to-go"
+              class="ml-1.5 font-medium text-ink-gray-8">{{ filtering ? shown.length : stats.to_go }}</span>
+        <span v-if="filtering" class="ml-1 text-xs text-ink-gray-4">{{ __('of {0}', [stats.to_go]) }}</span></div>
       <!-- §8 — colour carries emphasis, never meaning on its own, so the count says "critical"
            in words too. -->
       <div v-if="board.data?.critical">
         <span class="text-ink-red-6">{{ __('Critical') }}</span>
-        <span class="ml-1.5 font-medium text-ink-red-6">{{ board.data.critical }}</span>
+        <span data-testid="count-critical"
+              class="ml-1.5 font-medium text-ink-red-6">{{ filtering ? critical.length : board.data.critical }}</span>
+        <span v-if="filtering" class="ml-1 text-xs text-ink-gray-4">{{ __('of {0}', [board.data.critical]) }}</span>
       </div>
+      <div v-if="filtering" class="text-xs text-ink-gray-4">
+        {{ __('A filter is on. “To clear” and “Performed” still cover the whole list.') }}
+      </div>
+    </div>
+
+    <!-- §5 — AT 50 ITEMS SCROLLING IS NOT NAVIGATION. Filtering happens here rather than on the
+         server on purpose: the whole list is already loaded, it is tens of rows and not thousands,
+         and a round trip per keystroke would make the surface feel slower than the scrolling it
+         replaces. If the list ever outgrows that, the filter moves to `get_attention` — and the
+         counts move with it. -->
+    <div v-if="board.data?.total" class="mb-2 flex flex-wrap items-center gap-2 text-sm">
+      <input v-model="query" type="search" class="w-64 rounded border border-outline-gray-2 px-2 py-1 text-sm"
+             :placeholder="__('Search organisation, person or subject')" :aria-label="__('Search')" />
+      <select v-model="minDays" class="rounded border border-outline-gray-2 px-2 py-1 text-sm"
+              :aria-label="__('Waiting at least')">
+        <option :value="0">{{ __('Any age') }}</option>
+        <option :value="2">{{ __('2+ days') }}</option>
+        <option :value="5">{{ __('5+ days') }}</option>
+      </select>
+      <button v-if="filtering" class="text-xs text-ink-gray-5 underline" @click="clearFilters">
+        {{ __('Clear filters') }}
+      </button>
+      <!-- ⚠️ §4 IS A REPORT, NOT A FILTER, so there is no type control yet and the absence is
+           stated rather than left as a gap. Leads carry correspondence by both link routes, but
+           0 of 20 open production Leads have any reply recorded — the outbound-capture gap — so a
+           combined list would report almost every enquiry as unanswered. -->
+      <span class="text-xs text-ink-gray-4">{{ __('Deals only — Leads are with the architect') }}</span>
     </div>
 
     <div v-if="board.loading && !board.data" class="text-sm text-ink-gray-5">{{ __('Loading…') }}</div>
@@ -81,6 +117,16 @@
         <AttentionRow v-for="card in critical" :key="card.deal" :card="card"
                       :degraded="degraded" @open="open" />
       </template>
+
+      <!-- ⚠️ A FILTER THAT MATCHES NOTHING IS NOT AN ALL-CLEAR EITHER. Without this the list simply
+           renders empty under a "To go 0 of 10" heading, which is the same false reassurance the
+           three empty-state branches above exist to prevent, arriving by a door they do not cover. -->
+      <div v-if="filtering && !shown.length" class="rounded border border-outline-gray-2 p-4 text-sm">
+        <div class="font-medium text-ink-gray-8">{{ __('Nothing matches this filter.') }}</div>
+        <div class="mt-1 text-ink-gray-5">
+          {{ __('{0} deals are still waiting — clear the filter to see them.', [stats?.to_go ?? 0]) }}
+        </div>
+      </div>
 
       <template v-if="rest.length">
         <div class="flex items-baseline gap-2 pb-0.5 pt-3">
@@ -132,7 +178,7 @@
  * given. The `critical` flag is READ, never re-derived from the band name — otherwise the colour
  * and the words could disagree.
  */
-import { computed, onActivated, onMounted } from 'vue'
+import { computed, ref, onActivated, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Button, createResource } from 'frappe-ui'
 import LayoutHeader from '@/components/LayoutHeader.vue'
@@ -180,8 +226,31 @@ const allCards = computed(() => {
 // for equality with the failure string left the banner silent in the one situation it exists for.
 const degraded = computed(() =>
   !!board.data && board.data.age_source !== 'their_last_message')
-const critical = computed(() => allCards.value.filter((c) => c.critical))
-const rest = computed(() => allCards.value.filter((c) => !c.critical))
+// §5 — free text across organisation or person AND subject, and a minimum age. They COMPOSE:
+// each narrows what the previous one left, which is what "filters compose" means and what the
+// "of N" on the counts is measured against.
+const query = ref('')
+const minDays = ref(0)
+const filtering = computed(() => !!query.value.trim() || minDays.value > 0)
+function clearFilters() {
+  query.value = ''
+  minDays.value = 0
+}
+
+const shown = computed(() => {
+  const q = query.value.trim().toLowerCase()
+  return allCards.value.filter((c) => {
+    // ⚠️ AN UNKNOWN AGE IS NOT A YOUNG ONE. A row whose age could not be read must not be
+    // silently dropped by an age filter that reads `null` as zero — that is the same class of
+    // defect as the unbanded rows vanishing from the list.
+    if (minDays.value > 0 && !(c.age_days === null || c.age_days >= minDays.value)) return false
+    if (!q) return true
+    return `${c.who || ''} ${c.subject || ''}`.toLowerCase().includes(q)
+  })
+})
+
+const critical = computed(() => shown.value.filter((c) => c.critical))
+const rest = computed(() => shown.value.filter((c) => !c.critical))
 const criticalWhy = computed(() => __('not heard from in {0} days or more', [5]))
 
 const causeText = computed(() => {

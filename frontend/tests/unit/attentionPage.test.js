@@ -165,3 +165,105 @@ describe('Attention — the round trip', () => {
     expect(w.text()).toContain('Ooh! Media')
   })
 })
+
+/**
+ * §5 — search and filter. "At 50 items scrolling is not navigation."
+ *
+ * ⚠️ THE COUNTS ARE THE RISK HERE, NOT THE FILTERING. A count that silently describes a different
+ * set than the list below it is the shape of defect this estate keeps producing, and a filter is
+ * the easiest way to produce it.
+ */
+describe('Attention — search and filter', () => {
+  const many = () => payload({
+    total: 3, critical: 1,
+    cards: [
+      card({ deal: 'D1', who: 'Ooh! Media', subject: 'Re: QTN-00213', age_days: 18, critical: true }),
+      card({ deal: 'D2', who: 'Quarry', subject: 'Corporate enquiry', age_days: 3, critical: false }),
+      card({ deal: 'D3', who: 'Astrid Mullins', subject: 'Wedding favours', age_days: 1, critical: false }),
+    ],
+    stats: { since: '2026-08-24', days: 7, performed: 4, to_go: 3, to_clear: 7 },
+  })
+  const type = async (w, text) => {
+    await w.find('input[type="search"]').setValue(text)
+    return w
+  }
+  // `setValue` on a <select> compares by DOM string; these options bind numbers, so the option
+  // itself is selected instead. 0 = any age, 1 = 2+ days, 2 = 5+ days.
+  const age = async (w, i) => {
+    await w.findAll('option')[i].setSelected()
+    return w
+  }
+
+  it('searches the organisation or person', async () => {
+    const w = await type(await render(many()), 'quarry')
+    expect(rows(w)).toHaveLength(1)
+    expect(w.text()).toContain('Quarry')
+  })
+
+  it('searches the subject as well, because two deals share an organisation', async () => {
+    const w = await type(await render(many()), 'wedding')
+    expect(rows(w)).toHaveLength(1)
+    expect(w.text()).toContain('Astrid Mullins')
+  })
+
+  it('filters by age, and composes with the search', async () => {
+    const w = await render(many())
+    await age(w, 2)
+    expect(rows(w)).toHaveLength(1)
+    await type(w, 'quarry')
+    expect(rows(w)).toHaveLength(0)
+  })
+
+  // ⚠️ AN UNKNOWN AGE IS NOT A YOUNG ONE. Reading `null` as zero would drop a waiting row out of
+  // the list through an age filter — the same class of defect as the unbanded rows vanishing.
+  it('never drops a row whose age could not be read', async () => {
+    const p = many()
+    p.cards.push(card({ deal: 'D4', who: 'Unknown Age', age_days: null, critical: false }))
+    p.total = 4
+    const w = await render(p)
+    await age(w, 2)
+    expect(w.text()).toContain('Unknown Age')
+  })
+
+  // ⚠️ THE COUNTS MUST DESCRIBE THE LIST UNDERNEATH THEM, and say which of them cannot.
+  // The VALUE is asserted, not just the "of N" beside it — the first version of this test read
+  // only the "of 3" suffix, so leaving the count itself unfiltered passed it. A count test that
+  // does not read the count is decoration.
+  it('reports the filtered counts against the whole, and says a filter is on', async () => {
+    const w = await type(await render(many()), 'quarry')
+    expect(w.find('[data-testid="count-to-go"]').text()).toBe('1')
+    expect(w.text()).toContain('of 3')
+    expect(w.text()).toContain('A filter is on')
+    expect(w.text()).toContain('still cover the whole list')
+  })
+
+  it('filters the critical count too, since it also describes the list', async () => {
+    const w = await type(await render(many()), 'quarry')
+    expect(w.find('[data-testid="count-critical"]').text()).toBe('0')
+    expect(rows(w)).toHaveLength(1)
+  })
+
+  it('shows the unfiltered counts and no notice when nothing is filtered', async () => {
+    const w = await render(many())
+    expect(w.find('[data-testid="count-to-go"]').text()).toBe('3')
+    expect(w.text()).not.toContain('A filter is on')
+    expect(w.text()).not.toContain('of 3')
+  })
+
+  // ⚠️ A FILTER THAT MATCHES NOTHING IS NOT AN ALL-CLEAR. Without its own branch the list renders
+  // empty under a "To go 0 of 3" heading — the same false reassurance the three empty states exist
+  // to prevent, arriving by a door they do not cover.
+  it('says a filter matched nothing, and never claims the work is done', async () => {
+    const w = await type(await render(many()), 'zzzz')
+    expect(rows(w)).toHaveLength(0)
+    expect(w.text()).toContain('Nothing matches this filter')
+    expect(w.text()).toContain('3 deals are still waiting')
+    expect(w.text()).not.toContain('have been answered')
+  })
+
+  it('clears back to the whole list', async () => {
+    const w = await type(await render(many()), 'quarry')
+    await w.find('button.underline').trigger('click')
+    expect(rows(w)).toHaveLength(3)
+  })
+})
