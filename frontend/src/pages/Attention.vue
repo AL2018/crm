@@ -198,8 +198,10 @@ onActivated(() => board.reload())
 
 const stats = computed(() => board.data?.stats)
 
-// ⚠️ `cards` IS THE SERVER'S OWN ORDERED LIST — oldest first — AND THIS PAGE NO LONGER FLATTENS
-// THE BANDS ITSELF. It used to, and a row whose age could not be read has no band, so it counted
+// ⚠️ `cards` IS THE SERVER'S OWN ORDERED LIST AND THIS PAGE NEVER RE-SORTS IT. The order is
+// Alan's final ordering ruling of 31 August: Deals by CRM Deal Status position, days secondary
+// WITHIN a status. Sorting here as well would be a second copy of a rule that has already been
+// changed three times in one day. THIS PAGE NO LONGER FLATTENS THE BANDS ITSELF, either. It used to, and a row whose age could not be read has no band, so it counted
 // towards `total` and appeared nowhere: on the size of the task and off the list. These two only
 // PARTITION `cards`; they never re-sort it and never re-derive `critical` from the band name, or
 // the colour and the words could disagree about the same row.
@@ -251,7 +253,10 @@ const shown = computed(() => {
 
 const critical = computed(() => shown.value.filter((c) => c.critical))
 const rest = computed(() => shown.value.filter((c) => !c.critical))
-const criticalWhy = computed(() => __('not heard from in {0} days or more', [5]))
+// The critical group has two reasons now — age, or a status at/beyond the floor — so the label
+// names both rather than asserting the age one for rows that are there for the other.
+const criticalWhy = computed(() =>
+  __('not heard from in {0} days or more, or far enough along to lose', [5]))
 
 const causeText = computed(() => {
   const d = board.data

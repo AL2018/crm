@@ -122,6 +122,22 @@ describe('Attention — the round trip', () => {
       .not.toContain('could not be read just now')
   })
 
+  // ⚠️ THE SERVER'S ORDER IS THE ORDER. Alan's final ruling of 31 August puts Deals in CRM Deal
+  // Status position order with days secondary — a rule that changed three times in one day, which
+  // is exactly why the page must not carry a second copy of it.
+  it('renders the server order exactly, and never re-sorts', async () => {
+    const p = payload({
+      total: 3,
+      cards: [
+        card({ deal: 'A', who: 'A', subject: '', status: 'Ready to Close', age_days: 1, critical: true }),
+        card({ deal: 'B', who: 'B', subject: '', status: 'Quotation Issued', age_days: 16, critical: true }),
+        card({ deal: 'C', who: 'C', subject: '', status: 'New Enquiry', age_days: 18, critical: true }),
+      ],
+    })
+    const w = await render(p)
+    expect(rows(w).map((r) => r.text().replace(/[^ABC]/g, '')[0])).toEqual(['A', 'B', 'C'])
+  })
+
   // ⚠️ THE FALLBACK MUST NOT REORDER THE LIST. `bands` is youngest-first, so flattening them put
   // a one-day row above a three-day row — the surface's one ordering rule inverted on exactly the
   // path nobody would be watching.

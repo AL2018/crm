@@ -74,6 +74,24 @@ describe('AttentionRow — rendering', () => {
       .toContain('we wrote last')
   })
 
+  // ⚠️ STATUS IS CONTEXT ON THE ROW. It orders the list and can raise a row to critical; it must
+  // be legible either way, so it is not dropped or dimmed out of existence on a critical row.
+  it('shows the status on the row whether or not the row is critical', () => {
+    expect(mount(AttentionRow, { props: { card: card({ critical: true }) } }).text())
+      .toContain('Quotation Issued')
+    expect(mount(AttentionRow, { props: { card: card({ critical: false }) } }).text())
+      .toContain('Quotation Issued')
+  })
+
+  // ⚠️ THE ROW SAYS WHY IT IS AT THE TOP. A band that reorders the list without explaining itself
+  // reads as the list being arbitrary. It is a fact about two timestamps, so it is worded as one.
+  it('marks a status the customer has written past, and only then', () => {
+    expect(mount(AttentionRow, { props: { card: card({ status_stale: true }) } }).text())
+      .toContain('out of date')
+    expect(mount(AttentionRow, { props: { card: card({ status_stale: false }) } }).text())
+      .not.toContain('out of date')
+  })
+
   it('says so when a message has no text rather than showing an empty box', async () => {
     const w = mount(AttentionRow, { props: { card: card({ snippet: '' }) } })
     await w.find('button').trigger('click')

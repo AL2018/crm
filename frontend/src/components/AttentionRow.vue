@@ -27,7 +27,14 @@
          rev 3 §7, and it sits beside the snippet rather than instead of it. -->
     <span class="min-w-0 flex-1 truncate text-ink-gray-5">{{ card.subject }}</span>
 
-    <span class="hidden w-32 shrink-0 truncate text-xs text-ink-gray-5 lg:block">{{ card.status }}</span>
+    <!-- ⚠️ STATUS IS CONTEXT ON THE ROW, and that is all it is. Alan's correction of 31 August:
+         this list is about not missing correspondence, not about ranking deals — the Kanban ranks
+         deals. Status decides the ORDER the server sends and can raise a row to critical; it
+         never decides whether a row is here. -->
+    <span class="hidden w-32 shrink-0 truncate text-xs lg:block"
+          :class="card.critical ? 'text-ink-gray-7' : 'text-ink-gray-5'">{{ card.status
+      }}<span v-if="card.status_stale" class="ml-1 text-ink-amber-3"
+              :title="__('They have written since this status was set')">{{ __('· out of date') }}</span></span>
 
     <!-- ⚠️ THE WORDS CARRY THE MEANING; THE COLOUR ONLY EMPHASISES IT (rev 3 §8). A critical row
          says "critical" in words, so the list still reads correctly to someone who cannot
