@@ -79,4 +79,13 @@ describe('AttentionRow — rendering', () => {
     await w.find('button').trigger('click')
     expect(w.text()).toContain('No message text was recorded')
   })
+
+  // ⚠️ "NOTHING WAS RECORDED" AND "IT COULD NOT BE READ" ARE DIFFERENT FACTS. On the degraded
+  // path every snippet arrives empty, and the first sentence is then simply false.
+  it('does not claim a message is missing when it merely could not be read', async () => {
+    const w = mount(AttentionRow, { props: { card: card({ snippet: '' }), degraded: true } })
+    await w.find('button').trigger('click')
+    expect(w.text()).toContain('could not be read just now')
+    expect(w.text()).not.toContain('No message text was recorded')
+  })
 })

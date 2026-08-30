@@ -51,7 +51,9 @@
        only a greeting. See `crm_attention.first_line`. -->
   <div v-if="open" class="bg-surface-gray-1 py-1.5 pl-10 pr-3 text-xs"
        :class="card.snippet ? 'text-ink-gray-7' : 'text-ink-gray-4'">
-    {{ card.snippet || __('No message text was recorded — open the deal to read the thread.') }}
+    {{ card.snippet || (degraded
+       ? __('The message could not be read just now — open the deal to read the thread.')
+       : __('No message text was recorded — open the deal to read the thread.')) }}
   </div>
   </div>
 </template>
@@ -75,7 +77,14 @@
  */
 import { ref, computed } from 'vue'
 
-const props = defineProps({ card: { type: Object, required: true } })
+// ⚠️ `degraded` EXISTS SO THE ROW CANNOT MAKE A CLAIM IT CANNOT SUBSTANTIATE. When the server
+// could not read the messages at all, every snippet arrives empty — and "No message text was
+// recorded" is then FALSE: the text is recorded, it could not be read. Two different facts, and
+// the estate's whole standard here is that they must not be shown as one.
+const props = defineProps({
+  card: { type: Object, required: true },
+  degraded: { type: Boolean, default: false },
+})
 defineEmits(['open'])
 
 const open = ref(false)

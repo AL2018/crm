@@ -117,9 +117,35 @@ describe('Attention — the round trip', () => {
   // still render, the Critical group empties, and nothing said why.
   it('says so when the ages are the less-truthful kind', async () => {
     expect((await render(payload({ age_source: 'newest_correspondence' }))).text())
-      .toContain('measured from the last message either way')
+      .toContain('could not be read just now')
     expect((await render(payload())).text())
-      .not.toContain('measured from the last message either way')
+      .not.toContain('could not be read just now')
+  })
+
+  // ⚠️ THE FALLBACK MUST NOT REORDER THE LIST. `bands` is youngest-first, so flattening them put
+  // a one-day row above a three-day row — the surface's one ordering rule inverted on exactly the
+  // path nobody would be watching.
+  it('keeps oldest-first when it falls back to the bands', async () => {
+    const c = (d, days) => card({ deal: d, who: d, critical: false, age_days: days })
+    const p = payload({
+      total: 3,
+      columns: { '0-1 day': [c('A', 1)], '2-4 days': [c('B', 3), c('C', 2)], '5+ days': [] },
+    })
+    delete p.cards
+    const w = await render(p)
+    expect(rows(w).map((r) => r.text().replace(/[^ABC]/g, '')[0])).toEqual(['B', 'C', 'A'])
+  })
+
+  // ⚠️ AN OLDER SERVER SENDS NO `age_source` AT ALL, and that is exactly the case where the ages
+  // ARE the older kind. Testing equality with the failure string left the banner silent there.
+  it('warns about the ages when the server is too old to say which kind they are', async () => {
+    const p = payload()
+    delete p.age_source
+    expect((await render(p)).text()).toContain('could not be read just now')
+  })
+
+  it('says what "Performed" counts, because the word alone reads as work done', async () => {
+    expect((await render(payload())).text()).toContain('answered and off the list')
   })
 
   // ⚠️ TWO SEPARATELY DEPLOYED APPS. If the CRM ships ahead of `lc_winnow`, `cards` is absent

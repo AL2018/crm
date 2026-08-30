@@ -17,8 +17,13 @@
     <div v-if="stats" class="mb-3 flex flex-wrap items-baseline gap-x-5 gap-y-1 text-sm">
       <div><span class="text-ink-gray-5">{{ __('To clear') }}</span>
         <span class="ml-1.5 font-medium text-ink-gray-8">{{ stats.to_clear ?? '—' }}</span></div>
+      <!-- ⚠️ THE LABEL SAYS WHAT IT COUNTS. "Performed" alone reads as work done, and this counts
+           work done that LEFT THE LIST — the same rule the surface lives by. Reply to a deal
+           awaiting the customer's decision and you have answered them, but the deal stays on the
+           list as a chase and does not move this number. Named rather than left to be discovered. -->
       <div><span class="text-ink-gray-5">{{ __('Performed') }}</span>
         <span class="ml-1.5 font-medium text-ink-gray-8">{{ stats.performed ?? '—' }}</span>
+        <span class="ml-1 text-xs text-ink-gray-4">{{ __('answered and off the list') }}</span>
         <!-- ⚠️ THE PERIOD IS ON THE PAGE, NOT ONLY IN THE CODE. A count whose window is invisible
              is a count nobody can check. Rev 3 §6: a rolling week, so Monday does not open on a
              blank. -->
@@ -73,7 +78,8 @@
           <span class="text-xs font-medium uppercase tracking-wide text-ink-red-6">{{ __('Critical') }}</span>
           <span class="text-xs text-ink-gray-5">{{ criticalWhy }}</span>
         </div>
-        <AttentionRow v-for="card in critical" :key="card.deal" :card="card" @open="open" />
+        <AttentionRow v-for="card in critical" :key="card.deal" :card="card"
+                      :degraded="degraded" @open="open" />
       </template>
 
       <template v-if="rest.length">
@@ -83,7 +89,8 @@
           </span>
           <span class="text-xs text-ink-gray-4">{{ rest.length }}</span>
         </div>
-        <AttentionRow v-for="card in rest" :key="card.deal" :card="card" @open="open" />
+        <AttentionRow v-for="card in rest" :key="card.deal" :card="card"
+                      :degraded="degraded" @open="open" />
       </template>
     </div>
 
@@ -91,9 +98,9 @@
          message by either side, which on a deal awaiting their decision is OUR last chase — the
          very reading rev 3 §7 replaced. Silence here cost four critical rows in the adversarial
          pass, with nothing on the page to explain why the Critical group had emptied. -->
-    <div v-if="board.data && board.data.age_source === 'newest_correspondence'"
+    <div v-if="degraded"
          class="mt-2 rounded border border-outline-amber-2 bg-surface-amber-1 p-2 text-xs text-ink-amber-3">
-      {{ __('Ages could not be measured from the customer’s last message just now, so they are measured from the last message either way. A deal we have chased recently will read as younger than it is.') }}
+      {{ __('The customer’s last message could not be read just now, so ages are measured from the last message either way and no message text is shown. A deal we have chased recently will read as younger than it is.') }}
     </div>
 
     <div v-if="board.data?.unlinked || board.data?.unassessable"
@@ -160,8 +167,19 @@ const allCards = computed(() => {
   // the bands loses a row whose age could not be read, which is the lesser of the two failures
   // and lasts only until the other app deploys.
   if (Array.isArray(d.cards)) return d.cards
+  // ⚠️ AND THE FALLBACK MUST NOT REORDER THE LIST. `bands` is youngest-first, so flattening them
+  // put a one-day row above three-day rows — the surface's one ordering rule, oldest first,
+  // silently inverted on exactly the path nobody would be watching. Sorted the way the server
+  // sorts: oldest first, unknown ages last.
   return (d.bands || []).flatMap((b) => d.columns?.[b] || [])
+    .sort((a, b) => (a.age_days === null) - (b.age_days === null) || b.age_days - a.age_days)
 })
+
+// ⚠️ ANYTHING THAT IS NOT THE GOOD ANSWER IS THE DEGRADED ONE, including `undefined` — which is
+// what an older server sends, and is precisely the case where the ages ARE the older kind. A test
+// for equality with the failure string left the banner silent in the one situation it exists for.
+const degraded = computed(() =>
+  !!board.data && board.data.age_source !== 'their_last_message')
 const critical = computed(() => allCards.value.filter((c) => c.critical))
 const rest = computed(() => allCards.value.filter((c) => !c.critical))
 const criticalWhy = computed(() => __('not heard from in {0} days or more', [5]))
