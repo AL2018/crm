@@ -62,6 +62,18 @@ describe('AttentionRow — rendering', () => {
     expect(w.emitted('open')).toHaveLength(1)
   })
 
+  // ⚠️ EACH VALUE IS ASSERTED SEPARATELY. Deleting the subject or the status from the row left
+  // 142 tests green, because nothing named them.
+  it('shows the organisation, the subject, the status and who wrote last', () => {
+    const t = mount(AttentionRow, { props: { card: card() } }).text()
+    expect(t).toContain('Ooh! Media')
+    expect(t).toContain('Re: Quotation: QTN-00213')
+    expect(t).toContain('Quotation Issued')
+    expect(t).toContain('they wrote last')
+    expect(mount(AttentionRow, { props: { card: card({ state: 'awaiting_them' }) } }).text())
+      .toContain('we wrote last')
+  })
+
   it('says so when a message has no text rather than showing an empty box', async () => {
     const w = mount(AttentionRow, { props: { card: card({ snippet: '' }) } })
     await w.find('button').trigger('click')

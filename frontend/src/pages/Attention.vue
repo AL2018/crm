@@ -22,7 +22,10 @@
         <!-- ⚠️ THE PERIOD IS ON THE PAGE, NOT ONLY IN THE CODE. A count whose window is invisible
              is a count nobody can check. Rev 3 §6: a rolling week, so Monday does not open on a
              blank. -->
-        <span class="ml-1 text-xs text-ink-gray-4">{{ __('last {0} days', [stats.days]) }}</span></div>
+        <!-- ⚠️ THE PERIOD IS NAMED FROM THE PERIOD ACTUALLY USED. `days` used to be a constant, so
+             a custom `since` produced an all-time count under a "last 7 days" heading. -->
+        <span class="ml-1 text-xs text-ink-gray-4">{{ stats.days
+          ? __('last {0} days', [stats.days]) : __('since {0}', [stats.since]) }}</span></div>
       <div><span class="text-ink-gray-5">{{ __('To go') }}</span>
         <span class="ml-1.5 font-medium text-ink-gray-8">{{ stats.to_go }}</span></div>
       <!-- §8 — colour carries emphasis, never meaning on its own, so the count says "critical"
@@ -84,6 +87,15 @@
       </template>
     </div>
 
+    <!-- ⚠️ WHEN THE AGE QUERY FALLS OVER THE SURFACE SAYS SO. The ages then come from the newest
+         message by either side, which on a deal awaiting their decision is OUR last chase — the
+         very reading rev 3 §7 replaced. Silence here cost four critical rows in the adversarial
+         pass, with nothing on the page to explain why the Critical group had emptied. -->
+    <div v-if="board.data && board.data.age_source === 'newest_correspondence'"
+         class="mt-2 rounded border border-outline-amber-2 bg-surface-amber-1 p-2 text-xs text-ink-amber-3">
+      {{ __('Ages could not be measured from the customer’s last message just now, so they are measured from the last message either way. A deal we have chased recently will read as younger than it is.') }}
+    </div>
+
     <div v-if="board.data?.unlinked || board.data?.unassessable"
          class="mt-2 rounded border border-outline-amber-2 bg-surface-amber-1 p-2 text-xs text-ink-amber-3">
       {{ causeText }}
@@ -138,7 +150,18 @@ const stats = computed(() => board.data?.stats)
 // towards `total` and appeared nowhere: on the size of the task and off the list. These two only
 // PARTITION `cards`; they never re-sort it and never re-derive `critical` from the band name, or
 // the colour and the words could disagree about the same row.
-const allCards = computed(() => board.data?.cards || [])
+const allCards = computed(() => {
+  const d = board.data
+  if (!d) return []
+  // ⚠️ THE FALLBACK IS FOR VERSION SKEW BETWEEN TWO SEPARATELY DEPLOYED APPS, and without it the
+  // failure was silent. `cards` is served by `lc_winnow`; this page ships in the CRM. If the CRM
+  // lands first, `cards` is undefined while `total` is 10 — so no empty-state branch fires either
+  // — and the page renders "To go 10" above nothing at all, with no explanation. Falling back to
+  // the bands loses a row whose age could not be read, which is the lesser of the two failures
+  // and lasts only until the other app deploys.
+  if (Array.isArray(d.cards)) return d.cards
+  return (d.bands || []).flatMap((b) => d.columns?.[b] || [])
+})
 const critical = computed(() => allCards.value.filter((c) => c.critical))
 const rest = computed(() => allCards.value.filter((c) => !c.critical))
 const criticalWhy = computed(() => __('not heard from in {0} days or more', [5]))

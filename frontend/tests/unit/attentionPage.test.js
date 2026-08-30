@@ -36,8 +36,10 @@ const payload = (over = {}) => ({
   cards: [], bands: ['0-1 day', '2-4 days', '5+ days'],
   columns: { '0-1 day': [], '2-4 days': [], '5+ days': [] }, unbanded: [],
   total: 0, critical: 0, open_total: 12, unlinked: 0, unassessable: 0,
+  age_source: 'their_last_message',
   stats: { since: '2026-08-24', days: 7, performed: 4, to_go: 0, to_clear: 4 }, ...over,
 })
+const rows = (w) => w.findAll('[data-testid="attention-row"]')
 
 const render = async (data) => {
   board.data = data
@@ -65,6 +67,19 @@ describe('Attention — the empty state cannot claim an all-clear it cannot subs
     expect(w.text()).toContain('All 12 open deals have been answered')
   })
 
+  // ⚠️ COUNT THE ROWS. The XSS check set three fields to the same string, so it passed on `who`
+  // alone; nothing asserted how MANY rows rendered, and dropping the `!c.critical` filter — every
+  // critical deal rendered twice — went unnoticed by 142 green tests.
+  it('renders each deal exactly once, in the group its flag puts it in', async () => {
+    const w = await render(payload({
+      total: 2, critical: 1,
+      cards: [card(), card({ deal: 'CRM-DEAL-2026-00002', critical: false, who: 'Quarry' })],
+    }))
+    expect(rows(w)).toHaveLength(2)
+    expect(w.text().match(/Ooh! Media/g)).toHaveLength(1)
+    expect(w.text().match(/Quarry/g)).toHaveLength(1)
+  })
+
   it('MUTATION — an all-clear is impossible while anything is waiting', async () => {
     const w = await render(payload({ total: 1, cards: [card()] }))
     expect(w.text()).not.toContain('have been answered')
@@ -88,6 +103,32 @@ describe('Attention — the round trip', () => {
   it('shows the period the "performed" count covers, so the number can be checked', async () => {
     const w = await render(payload())
     expect(w.text()).toContain('last 7 days')
+  })
+
+  // ⚠️ A COUNT AND ITS HEADING MUST DESCRIBE THE SAME PERIOD. `days` was a constant, so a custom
+  // `since` produced an all-time number labelled "last 7 days".
+  it('names the date instead when the period is not a number of days', async () => {
+    const w = await render(payload({ stats: { since: '2020-01-01', days: null, performed: 4, to_go: 0, to_clear: 4 } }))
+    expect(w.text()).toContain('since 2020-01-01')
+    expect(w.text()).not.toContain('last 7 days')
+  })
+
+  // ⚠️ SILENCE WAS THE DEFECT. One caught exception server-side takes every age away; the rows
+  // still render, the Critical group empties, and nothing said why.
+  it('says so when the ages are the less-truthful kind', async () => {
+    expect((await render(payload({ age_source: 'newest_correspondence' }))).text())
+      .toContain('measured from the last message either way')
+    expect((await render(payload())).text())
+      .not.toContain('measured from the last message either way')
+  })
+
+  // ⚠️ TWO SEPARATELY DEPLOYED APPS. If the CRM ships ahead of `lc_winnow`, `cards` is absent
+  // while `total` is not — the page rendered a count above nothing at all.
+  it('still renders when the server is a version behind and sends no `cards`', async () => {
+    const c = card()
+    const p = payload({ total: 1, columns: { '0-1 day': [], '2-4 days': [], '5+ days': [c] } })
+    delete p.cards
+    expect(rows(await render(p))).toHaveLength(1)
   })
 
   // ⚠️ A ROW WITH NO READABLE AGE HAS NO BAND. It used to be counted in `total` and rendered
