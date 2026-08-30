@@ -109,14 +109,18 @@
          still exist in the data and still order the list; they never each get a column, and the
          layout must not be reinstated as columns. -->
     <div v-else-if="board.data" class="flex flex-1 flex-col overflow-y-auto">
-      <template v-if="critical.length">
-        <div class="flex items-baseline gap-2 pb-0.5 pt-1">
-          <span class="text-xs font-medium uppercase tracking-wide text-ink-red-6">{{ __('Critical') }}</span>
-          <span class="text-xs text-ink-gray-5">{{ criticalWhy }}</span>
-        </div>
-        <AttentionRow v-for="card in critical" :key="card.deal" :card="card"
-                      :degraded="degraded" @open="open" />
-      </template>
+      <!-- ⚠️ ONE LIST, IN THE SERVER'S ORDER — AND THIS USED TO BE TWO GROUPS, WHICH REORDERED IT.
+           Splitting critical from the rest pulled every critical row to the top, so a stale
+           Negotiation the server had placed fourth rendered eighth. That silently overrode the
+           ordering ruling of 31 August: stale status first, then status position, then days.
+           Critical is still unmistakable — colour, weight, and the word — which is all §8 ever
+           asked for; a heading was never the thing carrying the meaning. -->
+      <div v-if="critical.length" class="flex items-baseline gap-2 pb-0.5 pt-1">
+        <span class="text-xs font-medium uppercase tracking-wide text-ink-red-6">
+          {{ __('{0} critical', [critical.length]) }}
+        </span>
+        <span class="text-xs text-ink-gray-5">{{ criticalWhy }}</span>
+      </div>
 
       <!-- ⚠️ A FILTER THAT MATCHES NOTHING IS NOT AN ALL-CLEAR EITHER. Without this the list simply
            renders empty under a "To go 0 of 10" heading, which is the same false reassurance the
@@ -128,16 +132,8 @@
         </div>
       </div>
 
-      <template v-if="rest.length">
-        <div class="flex items-baseline gap-2 pb-0.5 pt-3">
-          <span class="text-xs font-medium uppercase tracking-wide text-ink-gray-5">
-            {{ critical.length ? __('Everything else') : __('Waiting') }}
-          </span>
-          <span class="text-xs text-ink-gray-4">{{ rest.length }}</span>
-        </div>
-        <AttentionRow v-for="card in rest" :key="card.deal" :card="card"
-                      :degraded="degraded" @open="open" />
-      </template>
+      <AttentionRow v-for="card in shown" :key="card.deal" :card="card"
+                    :degraded="degraded" @open="open" />
     </div>
 
     <!-- ⚠️ WHEN THE AGE QUERY FALLS OVER THE SURFACE SAYS SO. The ages then come from the newest
@@ -251,8 +247,9 @@ const shown = computed(() => {
   })
 })
 
+// ⚠️ `critical` COUNTS; IT NO LONGER PARTITIONS. Partitioning was what reordered the list. There
+// is deliberately no `rest`: every row renders from `shown`, in the order the server sent it.
 const critical = computed(() => shown.value.filter((c) => c.critical))
-const rest = computed(() => shown.value.filter((c) => !c.critical))
 // The critical group has two reasons now — age, or a status at/beyond the floor — so the label
 // names both rather than asserting the age one for rows that are there for the other.
 const criticalWhy = computed(() =>

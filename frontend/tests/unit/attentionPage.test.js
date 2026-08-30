@@ -138,6 +138,25 @@ describe('Attention — the round trip', () => {
     expect(rows(w).map((r) => r.text().replace(/[^ABC]/g, '')[0])).toEqual(['A', 'B', 'C'])
   })
 
+  // ⚠️ THE VERSION ABOVE WAS VACUOUS FOR THE DEFECT IT LOOKED LIKE IT COVERED: every card in it is
+  // critical, so grouping critical-first would have produced the same order and passed. THIS one
+  // interleaves them. Splitting the list into "Critical" and "Everything else" pulled every
+  // critical row to the top and silently overrode the ordering ruling — a stale Negotiation the
+  // server placed fourth rendered eighth.
+  it('MUTATION — a non-critical row keeps its place among critical ones', async () => {
+    const p = payload({
+      total: 4, critical: 2,
+      cards: [
+        card({ deal: 'A', who: 'A', subject: '', critical: true }),
+        card({ deal: 'B', who: 'B', subject: '', critical: false }),
+        card({ deal: 'C', who: 'C', subject: '', critical: true }),
+        card({ deal: 'D', who: 'D', subject: '', critical: false }),
+      ],
+    })
+    const w = await render(p)
+    expect(rows(w).map((r) => r.text().replace(/[^ABCD]/g, '')[0])).toEqual(['A', 'B', 'C', 'D'])
+  })
+
   // ⚠️ THE FALLBACK MUST NOT REORDER THE LIST. `bands` is youngest-first, so flattening them put
   // a one-day row above a three-day row — the surface's one ordering rule inverted on exactly the
   // path nobody would be watching.
