@@ -224,10 +224,22 @@ describe('Attention — the round trip', () => {
     expect(selects).toHaveLength(3)
     for (const sel of selects) {
       const cls = sel.attributes('class') || ''
+      // ⚠️ `w-auto` IS DECORATIVE AND IS ASSERTED AS DOCUMENTATION, NOT AS A GUARD. With
+      // `hasLabeling` false the library applies no width class at all and the trigger's base is
+      // `inline-flex`, so it is already content-width — removing `w-auto` changes nothing that
+      // renders. Kept and labelled because it states the intent at the call site; the assertion
+      // that actually carries the weight is `findAllComponents({ name: 'Select' })` above.
       expect(cls).toContain('w-auto')
       expect(cls).toContain('shrink-0')
       expect(cls).not.toContain('w-full')
     }
+    // ⚠️ AN ENGLISH PROXY, AND IT IS NOT THE WHOLE RULE. `__` is identity under test, so this
+    // pins untranslated English only — and the trigger sizes itself to the CURRENTLY SELECTED
+    // label (`Select.vue`'s `.select-trigger-sizer::after { content: attr(data-width-text) }`),
+    // so the row's width moves as the user chooses. German-length labels were measured in the
+    // browser: triggers 58/96/128 → 145/145/176 and the row 482 → 674px, which still fits at 1024
+    // and degrades into the horizontal scroll below ~900. So a long locale reaches the intended
+    // FALLBACK rather than breaking — but nothing here would notice one that went further.
     for (const opt of w.findAll('option'))
       expect(opt.text().length).toBeLessThanOrEqual(14)
   })
