@@ -100,12 +100,22 @@ export function collapseQuotedHistory(html) {
   // "On … wrote:". A further 7 of 47 put a pill inside a signature table, mid-message, nowhere
   // near a reply boundary. One collapse, at the end, is what "the boundary between what this
   // message says and everything before it" actually means.
-  // ⚠️ THE LAST QUOTE THAT HAS ANYTHING IN IT — and taking the last one BLINDLY abandoned the
-  // message instead of the empty quote. Production row `8hc79tec7j`, cited by the previous commit
-  // as the reason this guard exists, carries 3642 characters of real quoted history in its first
-  // blockquote and a literal `<blockquote></blockquote>` in its Outlook signature table. Taking the
-  // document-order last and refusing on emptiness returned `null`, so the 3642 characters rendered
-  // fully expanded — the guard threw away the message rather than the empty quote it was aimed at.
+  // ⚠️ THE LAST QUOTE THAT HAS ANYTHING IN IT — taking the last one BLINDLY made an empty trailing
+  // quote refuse the whole message, so real quoted history rendered fully expanded while the guard
+  // congratulated itself on not hanging a toggle on nothing.
+  //
+  // ⚠️ CORRECTED: THE ROW PREVIOUSLY CITED AS RESCUED BY THIS IS NOT RESCUED BY IT. `8hc79tec7j`
+  // was named in the last commit as the case this fix recovers. It is not: with this code the row
+  // is still refused, now because its `littlecocoa.com.au` signature block sits after the quote, so
+  // its 3642 characters still render expanded. The change is right in principle and the row was the
+  // wrong evidence for it. Recorded because this branch has already shipped three wrong numbers, and
+  // a wrong worked example is the same defect wearing a narrative.
+  //
+  // ⚠️ AND IT IS ONLY THE EMPTY TRAILING QUOTE THAT IS HANDLED. A trailing top-level quote with ANY
+  // content still captures the toggle and leaves the real history expanded — an Outlook
+  // "CONFIDENTIAL" disclaimer in a signature table does exactly that. Zero incidence across all 370
+  // CRM-linked production rows, and no content is lost when it happens: the message renders no worse
+  // than it does today. Known, measured, and not fixed.
   const quote = quotes.filter(meaningful).pop()
   if (!quote) return null
 

@@ -119,6 +119,38 @@ describe('collapseQuotedHistory', () => {
       '<table><tr><td><blockquote><p>all of it</p></blockquote></td></tr></table>')).toBeNull()
   })
 
+  // ⚠️ THREE PROPERTIES THE THIRD PASS FOUND LOAD-BEARING AND UNASSERTED — each survived mutation
+  // while changing what the code does to real shapes.
+  //
+  // The `.trim()` on text nodes is what stops INDENTATION counting as a reply. Stored mail is full
+  // of newlines between elements; without it, a message that is nothing but a quote collapses to a
+  // bare `…`.
+  it('does not count whitespace between elements as a reply', () => {
+    // ⚠️ THE SHAPE MATTERS AND THE FIRST VERSION OF THIS CHECK COULD NOT DISCRIMINATE. A bare
+    // leading newline is DROPPED by the HTML parser, so asserting on one tests nothing; whitespace
+    // inside an element survives, and that is what real stored mail is full of.
+    expect(collapseQuotedHistory('<div>   </div><blockquote><p>all quoted</p></blockquote>'))
+      .toBeNull()
+    expect(collapseQuotedHistory('<p>\n</p><blockquote><p>all quoted</p></blockquote>')).toBeNull()
+  })
+
+  // The walk root is `doc.body`, not `documentElement`. Walking the document pulls `<title>` and
+  // head `<style>` text into the "before" side, so a whole-quote message with a subject in its
+  // title collapses to a bare `…`.
+  it('does not count head text as content beside the quote', () => {
+    expect(collapseQuotedHistory(
+      '<html><head><title>RE: your order</title></head><body>' +
+      '<blockquote><p>entire message</p></blockquote></body></html>')).toBeNull()
+  })
+
+  // `meaningful()`'s picture arm decides WHICH QUOTE IS CHOSEN, not just what counts as content
+  // around it. Only the surroundings side of that list was covered.
+  it('treats a picture-only quote as a real quote when choosing one', () => {
+    const out = collapseQuotedHistory('<p>hi</p><blockquote><img src="history.png"></blockquote>')
+    expect(out).not.toBeNull()
+    expect(parse(out).querySelectorAll('.replied-content')).toHaveLength(1)
+  })
+
   it('sees a pull quote inside a wrapper, and refuses it', () => {
     expect(collapseQuotedHistory(
       '<p>Hi</p><div><blockquote><p>THEIR WORDS</p></blockquote><p>I disagree</p></div>'))
