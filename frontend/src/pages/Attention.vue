@@ -79,24 +79,33 @@
          carrying the count, and a `Select` for sort, arranged as the list-view bar arranges them.
          Recorded so nobody re-derives it: reusing the components themselves was tried and is not
          possible without inventing a fake doctype, which would be worse than this. -->
-    <!-- ⚠️ EACH CONTROL SIZED TO ITS CONTENT, NOT FILLING. A `select` is already content-width, so
-         what was pushing the row past the window was the search box at `w-56` plus three labels
-         written as full sentences. The labels are shortened and the box is `w-44`, which still
-         holds its placeholder. The horizontal scroll stays as the NARROW-WINDOW FALLBACK it was
-         meant to be, rather than as the normal case — Alan's ask. -->
-    <div v-if="board.data?.total"
+    <!-- ⚠️ EACH CONTROL SIZED TO ITS CONTENT, AND `FormControl` CANNOT DO IT. The previous version
+         said "a `select` is already content-width" and shortened the option labels on that basis.
+         There is no `<select>` here at all: `FormControl` dispatches to frappe-ui's `Select`, which
+         renders a `<button role="combobox">`, and `FormControl` hard-codes `w-full` for every
+         select-like type — `fillWidth` is computed from the TYPE and there is no prop to turn it
+         off. Three flex items at `width:100%` with `shrink-0` gave a row of roughly three times the
+         viewport, so the scroll was the normal case at EVERY window width and shortening labels
+         changed nothing. The adversarial review of `7427eb7e` mounted the real component to
+         establish it.
+         `Select` used DIRECTLY is the library's own answer: with no label, description or error its
+         `hasLabeling` is false, so it applies no width of its own and our class lands verbatim on
+         the trigger. The horizontal scroll stays as the NARROW-WINDOW FALLBACK it was meant to be
+         — Alan's ask. The shortened labels stay too: they are right on their own merits, they are
+         just not what fixes the width. -->
+    <div v-if="board.data?.total" data-testid="attention-filters"
          class="mb-2 flex flex-nowrap items-center gap-2 overflow-x-auto pb-1">
       <FormControl type="text" :placeholder="__('Search')" v-model="query"
                    :aria-label="__('Search name or subject')" class="w-44 shrink-0" />
 
-      <FormControl type="select" v-model="typeFilter" :aria-label="__('Type')" class="shrink-0"
+      <Select v-model="typeFilter" :aria-label="__('Type')" class="w-auto shrink-0"
                    :options="[
                      { label: __('All'), value: '' },
                      { label: __('Deals'), value: 'CRM Deal' },
                      { label: __('Leads'), value: 'CRM Lead' },
                    ]" />
 
-      <FormControl type="select" v-model="minDays" :aria-label="__('Waiting at least')" class="shrink-0"
+      <Select v-model="minDays" :aria-label="__('Waiting at least')" class="w-auto shrink-0"
                    :options="[
                      { label: __('Any age'), value: 0 },
                      { label: __('2+ days'), value: 2 },
@@ -106,7 +115,7 @@
       <!-- §3 — a sort control on days, both ways, in the same form. The DEFAULT is the ruled
            order (§1/§2), and choosing a day sort is an explicit override the label names, so
            nobody is left wondering why the list is not in the order the rules describe. -->
-      <FormControl type="select" v-model="sortBy" :aria-label="__('Sort')" class="shrink-0"
+      <Select v-model="sortBy" :aria-label="__('Sort')" class="w-auto shrink-0"
                    :options="[
                      { label: __('Default order'), value: '' },
                      { label: __('Oldest first'), value: 'days_desc' },
@@ -258,7 +267,7 @@
  */
 import { computed, ref, onActivated, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Button, FormControl, createResource } from 'frappe-ui'
+import { Button, FormControl, Select, createResource } from 'frappe-ui'
 import LayoutHeader from '@/components/LayoutHeader.vue'
 import AttentionRow from '@/components/AttentionRow.vue'
 
@@ -379,7 +388,12 @@ const shown = computed(() => {
     // defect as the unbanded rows vanishing from the list.
     if (minDays.value > 0 && !(shownAge(c) === null || shownAge(c) >= minDays.value)) return false
     if (!q) return true
-    return `${c.who || ''} ${c.subject || ''}`.toLowerCase().includes(q)
+    // ⚠️ `who_alt` IS SEARCHED BECAUSE SUPPRESSING A SUBJECT TOOK A NAME OUT OF THIS INDEX.
+    // `who` is `organization or lead_name` and the composed subject's prefix is the OTHER one, so
+    // on a record carrying both, the person's name reached this page only inside a subject that
+    // `lc_winnow` now blanks. The row stayed and stopped being findable by the name on the email,
+    // which is what made it silent. `|| ''` for skew: an older backend sends no such field.
+    return `${c.who || ''} ${c.who_alt || ''} ${c.subject || ''}`.toLowerCase().includes(q)
   })
   // ⚠️ THE SERVER'S ORDER IS THE DEFAULT AND SORTING IS AN EXPLICIT OVERRIDE. `sortBy` is empty
   // unless somebody chose a day sort, and the option that does nothing is labelled "as ruled" so

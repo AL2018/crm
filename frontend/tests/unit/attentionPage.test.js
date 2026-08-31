@@ -35,6 +35,21 @@ vi.mock('frappe-ui', () => ({
       <input v-else type="search" :value="modelValue" :placeholder="placeholder"
              @input="$emit('update:modelValue', $event.target.value)" />`,
   },
+  // ⚠️ THE PAGE USES `Select` DIRECTLY NOW, AND THE STUB IS STILL A STUB. It renders a native
+  // `<select>` so the interaction tests below can drive it, which is the ONLY thing a stub is
+  // good for. It says nothing about width — the real control's rendered class is asserted in
+  // `attentionFilterControl.test.js`, against the unmocked library, because that is the one
+  // question a stub structurally cannot answer.
+  Select: {
+    name: 'Select',
+    props: ['modelValue', 'options'],
+    emits: ['update:modelValue'],
+    template: `
+      <select :value="modelValue"
+              @change="$emit('update:modelValue', options[$event.target.selectedIndex].value)">
+        <option v-for="o in options" :key="String(o.value)" :value="o.value">{{ o.label }}</option>
+      </select>`,
+  },
 }))
 vi.mock('vue-router', () => ({ useRouter: () => ({ push }) }))
 vi.mock('@/components/LayoutHeader.vue', () => ({
@@ -192,22 +207,49 @@ describe('Attention — the round trip', () => {
     expect(widths(row)).toEqual(h)
   })
 
-  // ⚠️ THE ROW MUST FIT AT A NORMAL WINDOW WIDTH — the scroll is the narrow-window fallback, not
-  // the normal case. jsdom has no layout, so this asserts the thing that actually caused the
-  // overflow: the declared widths and the length of the option labels. A control that fills
-  // rather than sizing to its content is the defect; a long sentence in a `select` is the same
-  // defect wearing different clothes, because a select is as wide as its widest option.
-  it('sizes each filter control to its content', async () => {
+  // ⚠️ WHAT THIS CAN AND CANNOT SEE, STATED, BECAUSE THE VERSION IT REPLACES DID NOT KNOW.
+  // `frappe-ui` is mocked in this file, so every assertion here is about what the PAGE passes to
+  // its controls — which component, with which class. It cannot see what the library then renders,
+  // and the previous test believed it could: it read widths off a stubbed `<select>` the
+  // application never renders, and stayed green while the shipped row overflowed at every window
+  // width. The rendered side is `attentionFilterControl.test.js`.
+  it('gives each filter control a content width, on the component that honours one', async () => {
     const w = await render(payload({ total: 1, cards: [card()] }))
     const search = w.find('input[type="search"]')
     expect((search.attributes('class') || '')).toContain('w-44')
-    for (const sel of w.findAll('select')) {
-      // no width class at all — a select is content-width by default, and giving it one is what
-      // makes it fill
-      expect((sel.attributes('class') || '')).not.toMatch(/\bw-\d/)
-      for (const opt of sel.findAll('option'))
-        expect(opt.text().length).toBeLessThanOrEqual(14)
+    // ⚠️ THE COMPONENT IS THE ASSERTION. `FormControl type="select"` hard-codes `w-full` for every
+    // select-like type with no prop to turn it off, so reverting to it re-ships the defect — and
+    // that revert is invisible to any assertion about classes alone.
+    const selects = w.findAllComponents({ name: 'Select' })
+    expect(selects).toHaveLength(3)
+    for (const sel of selects) {
+      const cls = sel.attributes('class') || ''
+      expect(cls).toContain('w-auto')
+      expect(cls).toContain('shrink-0')
+      expect(cls).not.toContain('w-full')
     }
+    for (const opt of w.findAll('option'))
+      expect(opt.text().length).toBeLessThanOrEqual(14)
+  })
+
+  // ⚠️ THE SCROLL AND THE NO-WRAP WERE CLAIMED AND UNPINNED. `7427eb7e` said "the horizontal
+  // scroll stays, doing the job it was meant for"; deleting `overflow-x-auto` outright, and
+  // letting the row wrap into three lines, both left the suite green.
+  it('keeps the row on one line with the scroll as its fallback', async () => {
+    const w = await render(payload({ total: 1, cards: [card()] }))
+    // Addressed by test id, not by walking up from the input: the stub and the real control put
+    // the box at different depths, so a DOM walk asserts the harness rather than the page.
+    const row = w.find('[data-testid="attention-filters"]')
+    expect(row.attributes('class')).toContain('flex-nowrap')
+    expect(row.attributes('class')).toContain('overflow-x-auto')
+  })
+
+  // ⚠️ THE COMMIT MOVED USER-VISIBLE TEXT INTO AN ARIA ATTRIBUTE AND LEFT IT UNASSERTED —
+  // deleting the `aria-label` was a surviving mutant. The placeholder is now one word, so this
+  // attribute is the only thing naming what the box searches.
+  it('names the search box for a screen reader, since its placeholder no longer does', async () => {
+    const w = await render(payload({ total: 1, cards: [card()] }))
+    expect(w.find('input[type="search"]').attributes('aria-label')).toBe('Search name or subject')
   })
 
   it('names the columns Alan asked for', async () => {
@@ -435,6 +477,27 @@ describe('Attention — search and filter', () => {
     const w = await type(await render(many()), 'quarry')
     expect(rows(w)).toHaveLength(1)
     expect(w.text()).toContain('Quarry')
+  })
+
+  // ⚠️ THE NAME THAT ONLY EVER APPEARED INSIDE A SUPPRESSED SUBJECT. `who` is the organisation
+  // when there is one; the contact's name reached this page only inside the composed subject, and
+  // `lc_winnow` now blanks that subject when it is exactly the composer's default. Without
+  // `who_alt` in this index the row stays on the list and stops being findable by the name that
+  // was on the email — no error, no empty state, just a search that quietly misses.
+  it('searches the other name, so a suppressed subject does not hide the person', async () => {
+    const w = await type(await render(payload({
+      total: 1,
+      cards: [card({ deal: 'D9', who: 'Johnstone Events', who_alt: 'Nina Johnstone', subject: '' })],
+    })), 'nina')
+    expect(rows(w)).toHaveLength(1)
+    expect(w.text()).toContain('Johnstone Events')
+  })
+
+  // ⚠️ SKEW: an older `lc_winnow` sends no `who_alt` at all, and `undefined` must not become the
+  // string "undefined" in the index — which would make every row match a search for "undef".
+  it('searches cleanly when the server is a version behind and sends no `who_alt`', async () => {
+    const w = await type(await render(many()), 'undefined')
+    expect(rows(w)).toHaveLength(0)
   })
 
   it('searches the subject as well, because two deals share an organisation', async () => {
