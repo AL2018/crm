@@ -8,6 +8,7 @@
 
 <script setup>
 import { ref, watch } from 'vue'
+import { collapseQuotedHistory } from '@/utils/collapseQuotedHistory'
 
 const props = defineProps({
   content: { type: String, required: true },
@@ -35,6 +36,17 @@ if (gmailReplyToContent.length) {
   _content.value = parseReplyToContent(doc, 'div#appendonsend')
 } else if (replyToContent.length) {
   _content.value = parseReplyToContent(doc, 'p.reply-to-content')
+} else {
+  // ⚠️ THE FOURTH SHAPE, AND IT IS THE COMMON ONE. Parsed in Chromium and matched with these
+  // actual selectors over the 100 most recent CRM-linked production Communications: the three
+  // above reach 20; a further 47 quote with a bare `<blockquote>`, and no Sent message is
+  // collapsed by any of them — the CRM's own composer emits a classless `<blockquote>`. See
+  // `collapseQuotedHistory.js` for why this number was wrong twice before.
+  // LAST, so no existing behaviour changes: a message any of the three already handled takes the
+  // same branch it took before. `null` means "nothing to collapse", which is not "collapsed to
+  // nothing".
+  const collapsed = collapseQuotedHistory(_content.value)
+  if (collapsed !== null) _content.value = collapsed
 }
 
 function parseReplyToContent(doc, selector, forGmail = false) {
