@@ -192,6 +192,24 @@ describe('Attention — the round trip', () => {
     expect(widths(row)).toEqual(h)
   })
 
+  // ⚠️ THE ROW MUST FIT AT A NORMAL WINDOW WIDTH — the scroll is the narrow-window fallback, not
+  // the normal case. jsdom has no layout, so this asserts the thing that actually caused the
+  // overflow: the declared widths and the length of the option labels. A control that fills
+  // rather than sizing to its content is the defect; a long sentence in a `select` is the same
+  // defect wearing different clothes, because a select is as wide as its widest option.
+  it('sizes each filter control to its content', async () => {
+    const w = await render(payload({ total: 1, cards: [card()] }))
+    const search = w.find('input[type="search"]')
+    expect((search.attributes('class') || '')).toContain('w-44')
+    for (const sel of w.findAll('select')) {
+      // no width class at all — a select is content-width by default, and giving it one is what
+      // makes it fill
+      expect((sel.attributes('class') || '')).not.toMatch(/\bw-\d/)
+      for (const opt of sel.findAll('option'))
+        expect(opt.text().length).toBeLessThanOrEqual(14)
+    }
+  })
+
   it('names the columns Alan asked for', async () => {
     const t = (await render(payload({ total: 1, cards: [card()] })))
       .find('[data-testid="attention-header"]').text()

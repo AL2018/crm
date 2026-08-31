@@ -79,18 +79,21 @@
          carrying the count, and a `Select` for sort, arranged as the list-view bar arranges them.
          Recorded so nobody re-derives it: reusing the components themselves was tried and is not
          possible without inventing a fake doctype, which would be worse than this. -->
-    <!-- One line — Alan's ask. `flex-nowrap` with a scroll rather than wrapping, so a narrow
-         window shortens the row instead of stacking it into three. -->
+    <!-- ⚠️ EACH CONTROL SIZED TO ITS CONTENT, NOT FILLING. A `select` is already content-width, so
+         what was pushing the row past the window was the search box at `w-56` plus three labels
+         written as full sentences. The labels are shortened and the box is `w-44`, which still
+         holds its placeholder. The horizontal scroll stays as the NARROW-WINDOW FALLBACK it was
+         meant to be, rather than as the normal case — Alan's ask. -->
     <div v-if="board.data?.total"
          class="mb-2 flex flex-nowrap items-center gap-2 overflow-x-auto pb-1">
-      <FormControl type="text" :placeholder="__('Search name or subject')" v-model="query"
-                   :aria-label="__('Search')" class="w-56 shrink-0" />
+      <FormControl type="text" :placeholder="__('Search')" v-model="query"
+                   :aria-label="__('Search name or subject')" class="w-44 shrink-0" />
 
       <FormControl type="select" v-model="typeFilter" :aria-label="__('Type')" class="shrink-0"
                    :options="[
-                     { label: __('Leads and Deals'), value: '' },
-                     { label: __('Deals only'), value: 'CRM Deal' },
-                     { label: __('Leads only'), value: 'CRM Lead' },
+                     { label: __('All'), value: '' },
+                     { label: __('Deals'), value: 'CRM Deal' },
+                     { label: __('Leads'), value: 'CRM Lead' },
                    ]" />
 
       <FormControl type="select" v-model="minDays" :aria-label="__('Waiting at least')" class="shrink-0"
@@ -105,9 +108,9 @@
            nobody is left wondering why the list is not in the order the rules describe. -->
       <FormControl type="select" v-model="sortBy" :aria-label="__('Sort')" class="shrink-0"
                    :options="[
-                     { label: __('Sort: as ruled'), value: '' },
-                     { label: __('Sort: longest waiting first'), value: 'days_desc' },
-                     { label: __('Sort: shortest waiting first'), value: 'days_asc' },
+                     { label: __('Default order'), value: '' },
+                     { label: __('Oldest first'), value: 'days_desc' },
+                     { label: __('Newest first'), value: 'days_asc' },
                    ]" />
 
       <Button v-if="filtering" :label="__('Clear')" variant="ghost" @click="clearFilters" />
