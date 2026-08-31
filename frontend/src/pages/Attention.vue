@@ -388,12 +388,14 @@ const shown = computed(() => {
     // defect as the unbanded rows vanishing from the list.
     if (minDays.value > 0 && !(shownAge(c) === null || shownAge(c) >= minDays.value)) return false
     if (!q) return true
-    // ⚠️ `who_alt` IS SEARCHED BECAUSE SUPPRESSING A SUBJECT TOOK A NAME OUT OF THIS INDEX.
-    // `who` is `organization or lead_name` and the composed subject's prefix is the OTHER one, so
-    // on a record carrying both, the person's name reached this page only inside a subject that
-    // `lc_winnow` now blanks. The row stayed and stopped being findable by the name on the email,
-    // which is what made it silent. `|| ''` for skew: an older backend sends no such field.
-    return `${c.who || ''} ${c.who_alt || ''} ${c.subject || ''}`.toLowerCase().includes(q)
+    // ⚠️ `who_alt` WAS SEARCHED HERE AND IS GONE WITH THE RULE IT COMPENSATED FOR. `lc_winnow`
+    // blanked a subject that exactly matched the record's own composed default, which took the
+    // person's name out of this index on any record carrying both an organisation and a lead name.
+    // That suppression was removed on 1 September 2026 (`lc_winnow f9fd28a`) as more machinery than
+    // four rows justified, so the subject now reaches this page as the thread carries it and the
+    // name is searchable through it again. A remedy left in place for a problem that no longer
+    // happens is the next reader's puzzle.
+    return `${c.who || ''} ${c.subject || ''}`.toLowerCase().includes(q)
   })
   // ⚠️ THE SERVER'S ORDER IS THE DEFAULT AND SORTING IS AN EXPLICIT OVERRIDE. `sortBy` is empty
   // unless somebody chose a day sort, and the option that does nothing is labelled "as ruled" so

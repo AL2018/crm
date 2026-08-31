@@ -491,25 +491,18 @@ describe('Attention — search and filter', () => {
     expect(w.text()).toContain('Quarry')
   })
 
-  // ⚠️ THE NAME THAT ONLY EVER APPEARED INSIDE A SUPPRESSED SUBJECT. `who` is the organisation
-  // when there is one; the contact's name reached this page only inside the composed subject, and
-  // `lc_winnow` now blanks that subject when it is exactly the composer's default. Without
-  // `who_alt` in this index the row stays on the list and stops being findable by the name that
-  // was on the email — no error, no empty state, just a search that quietly misses.
-  it('searches the other name, so a suppressed subject does not hide the person', async () => {
+  // ⚠️ THE SUBJECT IS THE INDEX FOR A PERSON'S NAME AGAIN. A `who_alt` field was added here on
+  // 1 September 2026 because `lc_winnow` blanked a subject matching the record's own composed
+  // default, which removed the contact's name from this search while leaving the row on the list.
+  // That suppression was removed the same day (`lc_winnow f9fd28a`), so the name arrives inside the
+  // subject as it always did, and this pins that it is findable.
+  it('searches a name that only appears inside the subject', async () => {
     const w = await type(await render(payload({
       total: 1,
-      cards: [card({ deal: 'D9', who: 'Johnstone Events', who_alt: 'Nina Johnstone', subject: '' })],
+      cards: [card({ deal: 'D9', who: 'Johnstone Events', subject: 'Nina Johnstone (#D9)' })],
     })), 'nina')
     expect(rows(w)).toHaveLength(1)
     expect(w.text()).toContain('Johnstone Events')
-  })
-
-  // ⚠️ SKEW: an older `lc_winnow` sends no `who_alt` at all, and `undefined` must not become the
-  // string "undefined" in the index — which would make every row match a search for "undef".
-  it('searches cleanly when the server is a version behind and sends no `who_alt`', async () => {
-    const w = await type(await render(many()), 'undefined')
-    expect(rows(w)).toHaveLength(0)
   })
 
   it('searches the subject as well, because two deals share an organisation', async () => {
