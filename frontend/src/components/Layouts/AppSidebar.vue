@@ -48,6 +48,26 @@
             </template>
           </SidebarItem>
 
+          <!-- ATTENTION-V2 §2. This WAS an href into a desk page owned by another app, and the
+               sidebar review flagged that coupling as a moderate: nothing here declared the
+               dependency or checked it, so uninstalling `lc_winnow` or renaming that page turned
+               this into a link to a desk 404 for every CRM user.
+
+               Now the surface is a route in this app, so it is an ordinary `:to` like every other
+               entry, the coupling is gone with it, and the round trip is SPA navigation rather
+               than two full application boots. -->
+          <SidebarItem
+            v-if="canSeeAttention"
+            :label="__('Needs attention')"
+            :to="{ name: 'Attention' }"
+            :active="activeItem === 'Attention'"
+            @click="selectItem($event, 'Attention')"
+          >
+            <template #prefix>
+              <InboxIcon class="size-4 text-ink-gray-7" />
+            </template>
+          </SidebarItem>
+
           <CollapsibleSection
             v-for="section in allViews"
             :key="section.name"
@@ -194,6 +214,7 @@ import TaskIcon from '@/components/Icons/TaskIcon.vue'
 import PhoneIcon from '@/components/Icons/PhoneIcon.vue'
 import CollapseSidebar from '@/components/Icons/CollapseSidebar.vue'
 import NotificationsIcon from '@/components/Icons/NotificationsIcon.vue'
+import InboxIcon from '@/components/Icons/InboxIcon.vue'
 import HelpIcon from '@/components/Icons/HelpIcon.vue'
 import Notifications from '@/components/Notifications.vue'
 import Settings from '@/components/Settings/Settings.vue'
@@ -418,7 +439,15 @@ function toggleHelpModal() {
 
 // onboarding
 const { user } = sessionStore()
-const { users, isManager } = usersStore()
+const { users, isManager, isSalesUser } = usersStore()
+
+// `isManager` is Sales Manager OR System Manager, `isSalesUser` is Sales User — together exactly
+// the role list on the `attention` desk page. `getUser()` with no argument resolves to the session
+// user and returns a `role: null` stub before the user list loads, so this fails CLOSED: the item
+// is absent for a moment on a cold load rather than appearing for someone who may not follow it.
+const canSeeAttention = computed(() => isSalesUser() || isManager())
+
+
 const { isOnboardingStepsCompleted, setUp } = useOnboarding('frappecrm')
 
 async function getFirstLead() {

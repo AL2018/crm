@@ -511,7 +511,17 @@ function getParams() {
   }
 }
 
-list.value = createResource({
+// LC-QUICKFILTER (CC-BRIEF-QUICKFILTER-CLOSE-01, baseline v1.81.2)
+// The resource is held in a LOCAL CONST and its params are populated on that const, NOT through
+// `list.value`. `list` is a defineModel: its getter reads a prop the parent has not yet updated,
+// so within this tick `list.value` still returns the `{}` default. Upstream's own fix
+// (3557cb6b, the `list.value.params = getParams()` below) writes onto that default and is lost —
+// driven and disproved on staging. 4295a368 assigns inside onSuccess, which only runs after a
+// fetch succeeds, so it cannot populate the cold load either.
+// Note also `pageLength` at :440 is computed(() => list.value?.data?.page_length): getParams()
+// evaluated as the ARGUMENT here reads the same stale `{}`, which is why the first get_data
+// payload lacks page_length / page_length_count.
+const listResource = createResource({
   url: 'crm.api.doc.get_data',
   params: getParams(),
   cache: [props.doctype, route.query.view, route.params.viewType],
@@ -542,8 +552,10 @@ list.value = createResource({
   },
 })
 
-// createResource leaves `params` null until a fetch passes them explicitly
-list.value.params = getParams()
+// Populate on the CONST, then hand the resource to the model. Order matters: the assignment
+// through `list.value` cannot be relied on in this tick, so params must be set before it.
+listResource.params = getParams()
+list.value = listResource
 
 const isLoading = computed(() => list.value?.loading)
 
@@ -563,6 +575,12 @@ function updateSelections(selections) {
 }
 
 async function exportRows() {
+  // LC-QUICKFILTER: POPULATE, not `?.`. This reads params three times — .filters, .order_by and
+  // .page_length. Optional chaining on `order_by` yields undefined, which interpolates into the
+  // export URL below as `order_by=undefined` — trading a loud TypeError for a silently malformed
+  // request. Populating is the only treatment that keeps the export correct.
+  if (!list.value.params) list.value.params = getParams()
+
   let fields = JSON.stringify(list.value.data.columns.map((f) => f.key))
 
   let filters = JSON.stringify({
@@ -842,7 +860,7 @@ function setupNewQuickFilters(filters) {
 }
 
 function applyQuickFilter(filter, value) {
-  let filters = { ...list.value.params.filters }
+  let filters = { ...list.value.params?.filters }
   let field = filter.fieldname
   if (value) {
     if (
@@ -1292,7 +1310,7 @@ function applyFilter({ event, idx, column, item, firstColumn }) {
   event.stopPropagation()
   event.preventDefault()
 
-  let filters = { ...list.value.params.filters }
+  let filters = { ...list.value.params?.filters }
 
   let value = item.name ?? item.label ?? item
 
@@ -1317,7 +1335,7 @@ function applyFilter({ event, idx, column, item, firstColumn }) {
 }
 
 function applyLikeFilter() {
-  let filters = { ...list.value.params.filters }
+  let filters = { ...list.value.params?.filters }
   if (!filters._liked_by) {
     filters['_liked_by'] = ['LIKE', '%@me%']
   } else {

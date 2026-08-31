@@ -36,6 +36,14 @@ const routes = [
     name: 'Dashboard',
     component: () => import('@/pages/Dashboard.vue'),
   },
+  // ATTENTION-V2 §2. A CRM route rather than a desk page, so working an item is a round trip:
+  // router.push to the deal, act, come back to a list that is still there. Across the desk/CRM
+  // boundary each leg was a full application boot and the list was rebuilt from scratch.
+  {
+    path: '/attention',
+    name: 'Attention',
+    component: () => import('@/pages/Attention.vue'),
+  },
   {
     alias: '/leads',
     path: '/leads/view/:viewType?',
