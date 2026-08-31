@@ -163,6 +163,43 @@ describe('Attention — the round trip', () => {
     expect(w.text()).toContain('any enquiry waiting for a reply is missing')
   })
 
+  // ⚠️ THE HEADER AND THE ROW DESCRIBE ONE GRID FROM TWO FILES. Nothing but this stops them
+  // drifting apart, and a header that no longer lines up with its column is a defect the reader
+  // sees before any test does.
+  it('has a header whose column widths match the row exactly', async () => {
+    const w = await render(payload({ total: 1, cards: [card()] }))
+    const header = w.find('[data-testid="attention-header"]')
+    const row = w.find('[data-testid="attention-row"]')
+    // Split on whitespace and keep tokens that ARE a width — a substring match picks up `min-w-0`
+    // from the flexible Subject column and reports a mismatch that is not one.
+    const widths = (el) => el.findAll('span')
+      .map((s) => (s.attributes('class') || '').split(/\s+/).find((c) => /^w-/.test(c)))
+      .filter(Boolean)
+    expect(header.exists()).toBe(true)
+    // every width the header declares must appear on the row, in the same order
+    const h = widths(header).filter((c) => c !== 'w-[22px]')
+    expect(h).toEqual(['w-44', 'w-32', 'w-20', 'w-28', 'w-16'])
+    const r = widths(row)
+    for (const cls of h) expect(r).toContain(cls)
+  })
+
+  it('names the columns Alan asked for', async () => {
+    const t = (await render(payload({ total: 1, cards: [card()] })))
+      .find('[data-testid="attention-header"]').text()
+    for (const name of ['CRM Org.', 'Subject', 'Status', 'Last By', 'Age Since Last', 'Critical'])
+      expect(t).toContain(name)
+  })
+
+  // ⚠️ THE NOTE IS REWORDED FROM ALAN'S OWN DRAFT ON PURPOSE. His said items are "cleared by Won,
+  // Lost or Junk" — which would teach marking a deal Won to empty the list, the exact failure the
+  // no-button rule exists to prevent. Replying CLEARS; those three REMOVE.
+  it('says how items leave without teaching the wrong habit', async () => {
+    const t = (await render(payload())).text()
+    expect(t).toContain('Items clear when you reply')
+    expect(t).toContain('Won, Lost and Junk remove them for good')
+    expect(t).not.toContain('cleared by Won')
+  })
+
   it('names which read failed, so the gap is specific rather than a shrug', async () => {
     expect((await render(payload({ degraded: ['status'] }))).text())
       .toContain('the order is not the usual one')

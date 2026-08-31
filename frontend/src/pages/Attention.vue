@@ -3,6 +3,14 @@
     <template #left-header>
       <div class="flex items-center gap-2">
         <span class="text-lg font-medium text-ink-gray-8">{{ __('Needs attention') }}</span>
+        <!-- ⚠️ REWORDED FROM ALAN'S OWN NOTE, DELIBERATELY. His draft read "cleared by Won, Lost
+             or Junk", which teaches the wrong habit: marking a deal Won to empty the list is
+             exactly the failure the no-button rule exists to prevent. Replying is what CLEARS an
+             item; Won, Lost and Junk REMOVE it, because it has left the pipeline rather than
+             because it was dealt with. -->
+        <span class="text-xs text-ink-gray-5">
+          {{ __('Items clear when you reply. Won, Lost and Junk remove them for good.') }}
+        </span>
       </div>
     </template>
     <template #right-header>
@@ -71,18 +79,21 @@
          carrying the count, and a `Select` for sort, arranged as the list-view bar arranges them.
          Recorded so nobody re-derives it: reusing the components themselves was tried and is not
          possible without inventing a fake doctype, which would be worse than this. -->
-    <div v-if="board.data?.total" class="mb-2 flex flex-wrap items-center gap-2">
+    <!-- One line — Alan's ask. `flex-nowrap` with a scroll rather than wrapping, so a narrow
+         window shortens the row instead of stacking it into three. -->
+    <div v-if="board.data?.total"
+         class="mb-2 flex flex-nowrap items-center gap-2 overflow-x-auto pb-1">
       <FormControl type="text" :placeholder="__('Search name or subject')" v-model="query"
-                   :aria-label="__('Search')" class="w-64" />
+                   :aria-label="__('Search')" class="w-56 shrink-0" />
 
-      <FormControl type="select" v-model="typeFilter" :aria-label="__('Type')"
+      <FormControl type="select" v-model="typeFilter" :aria-label="__('Type')" class="shrink-0"
                    :options="[
                      { label: __('Leads and Deals'), value: '' },
                      { label: __('Deals only'), value: 'CRM Deal' },
                      { label: __('Leads only'), value: 'CRM Lead' },
                    ]" />
 
-      <FormControl type="select" v-model="minDays" :aria-label="__('Waiting at least')"
+      <FormControl type="select" v-model="minDays" :aria-label="__('Waiting at least')" class="shrink-0"
                    :options="[
                      { label: __('Any age'), value: 0 },
                      { label: __('2+ days'), value: 2 },
@@ -92,7 +103,7 @@
       <!-- §3 — a sort control on days, both ways, in the same form. The DEFAULT is the ruled
            order (§1/§2), and choosing a day sort is an explicit override the label names, so
            nobody is left wondering why the list is not in the order the rules describe. -->
-      <FormControl type="select" v-model="sortBy" :aria-label="__('Sort')"
+      <FormControl type="select" v-model="sortBy" :aria-label="__('Sort')" class="shrink-0"
                    :options="[
                      { label: __('Sort: as ruled'), value: '' },
                      { label: __('Sort: longest waiting first'), value: 'days_desc' },
@@ -160,6 +171,22 @@
            ordering ruling of 31 August: stale status first, then status position, then days.
            Critical is still unmistakable — colour, weight, and the word — which is all §8 ever
            asked for; a heading was never the thing carrying the meaning. -->
+      <!-- ⚠️ THE HEADER WIDTHS MIRROR `AttentionRow` EXACTLY. Two files describing one grid is a
+           drift risk with nothing to catch it, so the suite asserts they match rather than
+           trusting it: a header that stops lining up with its column is a defect the reader sees
+           before any test does. -->
+      <div class="sticky top-0 z-10 flex items-center gap-2 border-b border-outline-gray-2
+                  bg-surface-white px-2 py-1 text-xs font-medium text-ink-gray-5"
+           data-testid="attention-header">
+        <span class="w-[22px] shrink-0"></span>
+        <span class="w-44 shrink-0">{{ __('CRM Org.') }}</span>
+        <span class="min-w-0 flex-1">{{ __('Subject') }}</span>
+        <span class="hidden w-32 shrink-0 lg:block">{{ __('Status') }}</span>
+        <span class="hidden w-20 shrink-0 md:block">{{ __('Last By') }}</span>
+        <span class="w-28 shrink-0 text-right">{{ __('Age Since Last') }}</span>
+        <span class="w-16 shrink-0 text-right">{{ __('Critical') }}</span>
+      </div>
+
       <div v-if="critical.length" class="flex items-baseline gap-2 pb-0.5 pt-1">
         <span class="text-xs font-medium uppercase tracking-wide text-ink-red-6">
           {{ __('{0} critical', [critical.length]) }}
@@ -364,8 +391,12 @@ const shown = computed(() => {
 const critical = computed(() => shown.value.filter((c) => c.critical))
 // The critical group has two reasons now — age, or a status at/beyond the floor — so the label
 // names both rather than asserting the age one for rows that are there for the other.
-const criticalWhy = computed(() =>
-  __('not heard from in {0} days or more, or far enough along to lose', [5]))
+// ⚠️ THE CAPTION NO LONGER EXPLAINS INDIVIDUAL ROWS, BECAUSE IT COULD NOT. It read "5 days or more,
+// or far enough along to lose" above a list containing rows at "today" — three production Deals at
+// `Ready to Close` and age 0, critical by the second clause exactly as ruled. Neither the rule nor
+// the caption was wrong; a disjunction above a list simply cannot tell the reader which half
+// applies to the row in front of them. The reason moved onto the row; this just counts.
+const criticalWhy = computed(() => __('each row says why'))
 
 const causeText = computed(() => {
   const d = board.data

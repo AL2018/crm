@@ -31,10 +31,15 @@
          this list is about not missing correspondence, not about ranking deals — the Kanban ranks
          deals. Status decides the ORDER the server sends and can raise a row to critical; it
          never decides whether a row is here. -->
+    <!-- ⚠️ A COMPACT BADGE, NOT INLINE TEXT. Alan on production: "· out of date" truncated to
+         "out of …" on every row — carrying no information and consuming a column. A short badge
+         with the meaning in its tooltip fits, and the ordering it drives is unchanged. -->
     <span class="hidden w-32 shrink-0 truncate text-xs lg:block"
           :class="card.critical ? 'text-ink-gray-7' : 'text-ink-gray-5'">{{ card.status
-      }}<span v-if="card.status_stale" class="ml-1 font-medium text-ink-gray-8"
-              :title="__('They have written since this status was set')">{{ __('· out of date') }}</span></span>
+      }}<span v-if="card.status_stale"
+              class="ml-1 rounded bg-surface-gray-2 px-1 text-[10px] font-medium text-ink-gray-7"
+              :title="__('The status has not been set since the contact last wrote, so it may not be current.')"
+        >{{ __('stale') }}</span></span>
 
     <!-- ⚠️ THE WORDS CARRY THE MEANING; THE COLOUR ONLY EMPHASISES IT (rev 3 §8). A critical row
          says "critical" in words, so the list still reads correctly to someone who cannot
@@ -45,28 +50,32 @@
          under the 4.5:1 small text needs. So the colour became the BACKGROUND and the text became
          `ink-gray-8`, which reads at 12px and still signals. Applied wherever this surface used
          amber for text, not just here — see `Attention.vue`. -->
-    <span class="hidden w-28 shrink-0 md:block">
+    <span class="hidden w-20 shrink-0 md:block">
       <!-- ⚠️ THREE STATES, NOT TWO. Anything that was not `waiting_on_us` read as "we wrote last",
            so an `unknown` row — one whose direction could not be read at all — CLAIMED the customer
            had been answered. That is the one thing this surface must never say wrongly. Not
            reachable from the page today, but `get_attention` is whitelisted and returns those rows
            when asked, and a label that lies when called directly will lie on the page eventually. -->
+      <!-- "Last By" — who sent the most recent message. Alan's words: `us` and `contact`. -->
       <span class="rounded px-1.5 py-0.5 text-xs"
             :class="card.state === 'waiting_on_us'
               ? 'bg-surface-amber-1 font-medium text-ink-gray-8'
               : 'text-ink-gray-5'">
-        {{ card.state === 'waiting_on_us' ? __('they wrote last')
-           : card.state === 'unknown' ? __('direction unreadable') : __('we wrote last') }}
+        {{ card.state === 'waiting_on_us' ? __('contact')
+           : card.state === 'unknown' ? __('unknown') : __('us') }}
       </span>
     </span>
 
-    <span class="w-24 shrink-0 text-right text-xs tabular-nums"
+    <span class="w-28 shrink-0 text-right text-xs tabular-nums"
           :class="card.critical ? 'font-medium text-ink-red-6' : 'text-ink-gray-6'">
       {{ ageLabel }}
     </span>
-    <span class="w-14 shrink-0 text-right text-xs font-medium text-ink-red-6">
-      {{ card.critical ? __('critical') : '' }}
-    </span>
+    <!-- ⚠️ THE ROW SAYS WHY IT IS CRITICAL. A disjunction above the list — "5 days or more, or far
+         enough along to lose" — cannot tell the reader which half applies to the row they are
+         looking at, which is how three `Ready to Close` rows at age 0 read as a fault. The reason
+         comes from the server, from the same expression as the flag. -->
+    <span class="w-16 shrink-0 text-right text-xs font-medium text-ink-red-6"
+          :title="criticalWhy">{{ criticalLabel }}</span>
   </div>
 
   <!-- What they actually said. Measured against 38 real production emails before it was built:
@@ -112,11 +121,30 @@ defineEmits(['open'])
 
 const open = ref(false)
 
+// ⚠️ READS `display_age_days`, NOT `age_days`. A row saying "we wrote last" and "not heard from"
+// at once was two true facts arranged to look like a fault: `age_days` is measured from the
+// CONTACT's last message and is absent when they have never written. The displayed age falls back
+// to how long OUR message has been sitting, and `Last By` already says which it is — so the two
+// columns can no longer disagree. The server computes both; this never subtracts a date.
 const ageLabel = computed(() => {
-  if (props.card.age_days === null || props.card.age_days === undefined)
-    return __('not heard from')
-  if (props.card.age_days === 0) return __('today')
-  if (props.card.age_days === 1) return __('1 day')
-  return __('{0} days', [props.card.age_days])
+  const d = props.card.display_age_days ?? props.card.age_days
+  // "never" rather than a dash: a dash reads as missing data, and this is a declared fact — there
+  // has been no correspondence from them at all. It should be unreachable on a listed row, since
+  // a row is only listed when somebody has written; it is the safety net, not the common case.
+  if (d === null || d === undefined) return __('never')
+  if (d === 0) return __('today')
+  if (d === 1) return __('1 day')
+  return __('{0} days', [d])
+})
+
+const criticalLabel = computed(() =>
+  props.card.critical ? (props.card.critical_because || []).join(' + ') || __('yes') : '')
+const criticalWhy = computed(() => {
+  const w = props.card.critical_because || []
+  if (!props.card.critical) return ''
+  const say = []
+  if (w.includes('age')) say.push(__('no reply for 5 days or more'))
+  if (w.includes('stage')) say.push(__('far enough along to lose'))
+  return say.join('; ')
 })
 </script>

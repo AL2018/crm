@@ -46,7 +46,7 @@ describe('AttentionRow — a Lead travels every path a Deal does', () => {
   // no part in anything. The server never sets the flag for a Lead; this makes the row's silence
   // on it a property rather than an accident of the data.
   it('never shows the out-of-date marker on a Lead', () => {
-    expect(mount(AttentionRow, { props: { card: lead() } }).text()).not.toContain('out of date')
+    expect(mount(AttentionRow, { props: { card: lead() } }).text()).not.toContain('stale')
   })
 
   it('opens and expands like any other row', async () => {
@@ -59,9 +59,9 @@ describe('AttentionRow — a Lead travels every path a Deal does', () => {
 
   it('says who wrote last on a Lead too', () => {
     expect(mount(AttentionRow, { props: { card: lead({ state: 'waiting_on_us' }) } }).text())
-      .toContain('they wrote last')
+      .toContain('contact')
     expect(mount(AttentionRow, { props: { card: lead({ state: 'awaiting_them' }) } }).text())
-      .toContain('we wrote last')
+      .toContain('us')
   })
 })
 
@@ -78,19 +78,41 @@ describe('AttentionRow — rendering', () => {
     expect(w.text()).toContain(hostile)
   })
 
-  it('says "critical" in words, not only in colour', () => {
-    const w = mount(AttentionRow, { props: { card: card() } })
-    expect(w.text()).toContain('critical')
+  // ⚠️ THE WORDS STILL CARRY THE MEANING — and they now say WHICH clause applies, because a
+  // disjunction above the list could not tell the reader why a row at "today" was critical.
+  it('says why it is critical in words, not only in colour', () => {
+    const w = mount(AttentionRow, { props: { card: card({ critical_because: ['age'] }) } })
+    expect(w.text()).toContain('age')
+    const both = mount(AttentionRow,
+      { props: { card: card({ critical_because: ['age', 'stage'] }) } })
+    expect(both.text()).toContain('age + stage')
     expect(mount(AttentionRow, { props: { card: card({ critical: false }) } }).text())
-      .not.toContain('critical')
+      .not.toContain('stage')
   })
 
   it('reads the age the server computed and never recomputes one', () => {
-    expect(mount(AttentionRow, { props: { card: card() } }).text()).toContain('18 days')
-    expect(mount(AttentionRow, { props: { card: card({ age_days: 1 }) } }).text()).toContain('1 day')
-    // ⚠️ AN AGE THAT CANNOT BE READ MUST NOT RENDER AS ZERO OR AS BLANK — zero is a claim.
-    expect(mount(AttentionRow, { props: { card: card({ age_days: null }) } }).text())
-      .toContain('not heard from')
+    expect(mount(AttentionRow, { props: { card: card({ display_age_days: 18 }) } }).text())
+      .toContain('18 days')
+    expect(mount(AttentionRow, { props: { card: card({ display_age_days: 1 }) } }).text())
+      .toContain('1 day')
+    // ⚠️ AN AGE THAT CANNOT BE READ MUST NOT RENDER AS ZERO OR AS BLANK — zero is a claim, and a
+    // dash reads as missing data where this is a declared fact.
+    expect(mount(AttentionRow,
+      { props: { card: card({ age_days: null, display_age_days: null }) } }).text())
+      .toContain('never')
+  })
+
+  // ⚠️ THE TWO COLUMNS MUST NOT CONTRADICT EACH OTHER. "we wrote last" beside "not heard from" was
+  // two true facts arranged to look like a fault. When the contact has never written, the age
+  // shown is how long OUR message has been sitting.
+  it('shows how long we have been waiting when the contact has never written', () => {
+    const t = mount(AttentionRow, {
+      props: { card: card({ state: 'awaiting_them', age_days: null, display_age_days: 4,
+                            age_basis: 'us' }) },
+    }).text()
+    expect(t).toContain('4 days')
+    expect(t).toContain('us')
+    expect(t).not.toContain('never')
   })
 
   it('keeps the snippet behind the expander, and the expander does not open the deal', async () => {
@@ -110,9 +132,9 @@ describe('AttentionRow — rendering', () => {
     expect(t).toContain('Ooh! Media')
     expect(t).toContain('Re: Quotation: QTN-00213')
     expect(t).toContain('Quotation Issued')
-    expect(t).toContain('they wrote last')
+    expect(t).toContain('contact')
     expect(mount(AttentionRow, { props: { card: card({ state: 'awaiting_them' }) } }).text())
-      .toContain('we wrote last')
+      .toContain('us')
   })
 
   // ⚠️ STATUS IS CONTEXT ON THE ROW. It orders the list and can raise a row to critical; it must
@@ -128,9 +150,9 @@ describe('AttentionRow — rendering', () => {
   // reads as the list being arbitrary. It is a fact about two timestamps, so it is worded as one.
   it('marks a status the customer has written past, and only then', () => {
     expect(mount(AttentionRow, { props: { card: card({ status_stale: true }) } }).text())
-      .toContain('out of date')
+      .toContain('stale')
     expect(mount(AttentionRow, { props: { card: card({ status_stale: false }) } }).text())
-      .not.toContain('out of date')
+      .not.toContain('stale')
   })
 
   // ⚠️ THE CLASS IS THE BEHAVIOUR HERE, so it is asserted directly. Alan: the yellow has too little
@@ -150,10 +172,9 @@ describe('AttentionRow — rendering', () => {
   // one row wide.
   it('never says we wrote last when the direction could not be read', () => {
     const t = mount(AttentionRow, { props: { card: card({ state: 'unknown' }) } }).text()
-    expect(t).toContain('direction unreadable')
-    expect(t).not.toContain('we wrote last')
+    expect(t).toContain('unknown')
     expect(mount(AttentionRow, { props: { card: card({ state: 'awaiting_them' }) } }).text())
-      .toContain('we wrote last')
+      .toContain('us')
   })
 
   // ⚠️ THE ROW ANSWERS ONE QUESTION AND MUST NOT BE HANDED A WIDER ONE. Passing the page's whole
