@@ -48,29 +48,20 @@
             </template>
           </SidebarItem>
 
-          <!-- ⚠️ NOT A ROUTER LINK. Every other entry here is a vue-router `name` inside this SPA;
-               "Needs attention" is a DESK page at /app/attention, so it navigates out of the app
-               entirely and must use an href, not `:to`. The Notifications item above is the
-               existing precedent for an entry with a click handler and no route.
+          <!-- ATTENTION-V2 §2. This WAS an href into a desk page owned by another app, and the
+               sidebar review flagged that coupling as a moderate: nothing here declared the
+               dependency or checked it, so uninstalling `lc_winnow` or renaming that page turned
+               this into a link to a desk 404 for every CRM user.
 
-               Gated on the same roles the desk page itself grants. The server collapses a user's
-               CRM roles to the highest held (see crm/api/session.py), so isSalesUser() ||
-               isManager() is set-equal to "holds Sales User, Sales Manager or System Manager".
-               The page enforces this again server-side; the gate is about not offering a dead
-               link, not about access.
-
-               ⚠️ AND THIS ROUTE IS OWNED BY ANOTHER APP. The page lives in `lc_winnow`, not here,
-               and nothing in this repo declares that dependency or checks it at runtime. There is
-               no existence check a Sales User could make: `Page` is readable only by System
-               Manager, and `frappe.apps.get_apps` lists only apps on the apps screen, which
-               `lc_winnow` is not on. A guard built from either would hide the link from exactly
-               the people who need it. So the coupling is recorded here instead: uninstall
-               `lc_winnow`, or rename that page, and this becomes a link to a desk 404 for every
-               CRM user. -->
+               Now the surface is a route in this app, so it is an ordinary `:to` like every other
+               entry, the coupling is gone with it, and the round trip is SPA navigation rather
+               than two full application boots. -->
           <SidebarItem
             v-if="canSeeAttention"
             :label="__('Needs attention')"
-            @click="openAttention"
+            :to="{ name: 'Attention' }"
+            :active="activeItem === 'Attention'"
+            @click="selectItem($event, 'Attention')"
           >
             <template #prefix>
               <InboxIcon class="size-4 text-ink-gray-7" />
@@ -456,9 +447,7 @@ const { users, isManager, isSalesUser } = usersStore()
 // is absent for a moment on a cold load rather than appearing for someone who may not follow it.
 const canSeeAttention = computed(() => isSalesUser() || isManager())
 
-function openAttention() {
-  window.location.href = '/app/attention'
-}
+
 const { isOnboardingStepsCompleted, setUp } = useOnboarding('frappecrm')
 
 async function getFirstLead() {
