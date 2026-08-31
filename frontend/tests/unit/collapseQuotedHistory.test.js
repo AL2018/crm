@@ -85,6 +85,59 @@ describe('collapseQuotedHistory', () => {
     expect(collapseQuotedHistory('<p>hi</p><blockquote>   </blockquote>')).toBeNull()
   })
 
+  // ⚠️ THE EMPTY QUOTE MUST BE SKIPPED, NOT THE MESSAGE. Production row `8hc79tec7j` — cited as the
+  // reason the emptiness guard exists — carries 3642 characters of real quoted history in its first
+  // blockquote and a literal empty one in its Outlook signature table. Taking the document-order
+  // last quote and refusing on emptiness abandoned the whole message and rendered the history
+  // fully expanded: the guard threw away the thing it was protecting.
+  it('skips an empty trailing quote and collapses the real one', () => {
+    const out = collapseQuotedHistory(
+      '<p>reply</p><blockquote><p>REAL HISTORY</p></blockquote><blockquote></blockquote>')
+    expect(out).not.toBeNull()
+    const d = parse(out)
+    expect(d.querySelectorAll('.replied-content')).toHaveLength(1)
+    expect(d.querySelector('.replied-content').textContent).toContain('REAL HISTORY')
+  })
+
+  // ⚠️ ONE WRAPPING <div> DEFEATED BOTH GUARDS, IN OPPOSITE DIRECTIONS. The walk read only
+  // `doc.body.childNodes` and stepped past the entire node containing the quote, so anything inside
+  // that node was invisible. Real production rows got opposite answers for the same shape depending
+  // on their sender's mail client nesting.
+  it('sees the reply when it is inside a wrapper, and still collapses', () => {
+    const out = collapseQuotedHistory(
+      '<div><p>Yes, Tuesday works.</p><blockquote><p>the original</p></blockquote></div>')
+    expect(out).not.toBeNull()
+    expect(parse(out).querySelectorAll('.replied-content')).toHaveLength(1)
+  })
+
+  // ⚠️ AN ANCESTOR OF THE QUOTE IS NOT CONTENT BESIDE IT. A `<table>` wrapping the quote matches
+  // the visible-element list, so counting it would credit the quote's own container as content
+  // "before" the quote — and a message that is nothing but a quoted history in a table would
+  // collapse to a bare `…`, which is the failure the something-before guard exists to prevent.
+  it('does not count the quote\'s own container as content beside it', () => {
+    expect(collapseQuotedHistory(
+      '<table><tr><td><blockquote><p>all of it</p></blockquote></td></tr></table>')).toBeNull()
+  })
+
+  it('sees a pull quote inside a wrapper, and refuses it', () => {
+    expect(collapseQuotedHistory(
+      '<p>Hi</p><div><blockquote><p>THEIR WORDS</p></blockquote><p>I disagree</p></div>'))
+      .toBeNull()
+  })
+
+  // ⚠️ `meaningful` READ `img, table, video`, WHICH IS HALF A RULE. An `<svg>` after the quote did
+  // not block a collapse, so the collapse hid it; a reply whose only visible part was an `<svg>`
+  // read as empty and was refused. Both directions, one list.
+  it('counts the pictures a reader can actually see, on both sides of the quote', () => {
+    expect(collapseQuotedHistory(
+      '<svg><circle r="1"/></svg><blockquote><p>the original</p></blockquote>')).not.toBeNull()
+    expect(collapseQuotedHistory(
+      '<p>hi</p><blockquote><p>the original</p></blockquote><table><tr><td>terms</td></tr></table>'))
+      .toBeNull()
+    expect(collapseQuotedHistory(
+      '<p>hi</p><blockquote><p>the original</p></blockquote><iframe src="x"></iframe>')).toBeNull()
+  })
+
   // ⚠️ `null` IS "LEAVE IT ALONE", NOT "IT IS EMPTY". The caller assigns only when the answer is
   // not null, so a wrong sentinel here blanks the message body.
   it('answers null when there is no quote, so the caller leaves the content untouched', () => {

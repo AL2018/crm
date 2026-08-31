@@ -21,10 +21,51 @@
  * cannot be un-matched, so the same shape would recurse forever on its own output.
  */
 
-/** Content a reader would notice. `textContent` alone cannot see an image-only message. */
+// ⚠️ WHAT A READER WOULD NOTICE, AND THE LIST IS WIDER THAN IT WAS. It read `img, table, video`,
+// which the second review showed is half a rule: an `<svg>` or an `<iframe>` AFTER the quote did
+// not block a collapse (so the collapse hid content), while a reply whose only visible part was an
+// inline `<svg>` read as empty (so it was refused) — the same class of failure as the image-only
+// bug the previous commit fixed, fixed halfway.
+const VISIBLE = 'img, table, video, svg, iframe, object, audio, picture'
+
+/** Content a reader would notice. `textContent` alone cannot see a picture. */
 function meaningful(node) {
   if (!node) return false
-  return Boolean((node.textContent || '').trim() || node.querySelector('img, table, video'))
+  return Boolean((node.textContent || '').trim() || node.querySelector(VISIBLE))
+}
+
+/**
+ * What sits before and after the quote IN DOCUMENT ORDER, wherever it is nested.
+ *
+ * ⚠️ THE FIRST VERSION WALKED `doc.body.childNodes` AND `continue`d PAST THE WHOLE NODE CONTAINING
+ * THE QUOTE, so one wrapping `<div>` made everything inside it invisible to both guards — and it
+ * failed in BOTH directions on real production mail. A row with 1643 characters of the sender's
+ * own reply inside a wrapper was refused as "the whole message is quote", which was untrue of it.
+ * And the pull-quote protection was defeated by the same div: `<p>Hi</p><div><blockquote>THEIR
+ * WORDS</blockquote><p>I disagree</p></div>` collapsed, hiding what was being replied to — verbatim
+ * the inversion that guard exists to prevent. Two semantically identical messages got opposite
+ * answers depending on the sender's mail client's nesting.
+ */
+function surroundings(doc, quote) {
+  const before = { seen: false }
+  const after = { seen: false }
+  const walk = doc.createTreeWalker(doc.body, 5 /* SHOW_ELEMENT | SHOW_TEXT */)
+  let node
+  while ((node = walk.nextNode())) {
+    if (node === quote || quote.contains(node)) continue
+    const pos = quote.compareDocumentPosition(node)
+    // An ANCESTOR of the quote contains it, so its own text already covers both sides — counting
+    // the element itself would credit the quote's content to whichever side it sits on.
+    if (pos & 8 /* CONTAINS */) continue
+    const side = pos & 2 /* PRECEDING */ ? before : pos & 4 /* FOLLOWING */ ? after : null
+    if (!side) continue
+    if (node.nodeType === 3) {
+      if ((node.textContent || '').trim()) side.seen = true
+    } else if (node.matches && node.matches(VISIBLE)) {
+      side.seen = true
+    }
+  }
+  return { before: before.seen, after: after.seen }
 }
 
 /**
@@ -59,42 +100,39 @@ export function collapseQuotedHistory(html) {
   // "On … wrote:". A further 7 of 47 put a pill inside a signature table, mid-message, nowhere
   // near a reply boundary. One collapse, at the end, is what "the boundary between what this
   // message says and everything before it" actually means.
-  const quote = quotes[quotes.length - 1]
-
-  // ⚠️ AN EMPTY QUOTE IS A TOGGLE THAT OPENS TO NOTHING — visible, plausible and inert, the exact
-  // failure this build claimed to guard against while shipping it: production row `8hc79tec7j`
-  // carries a literal `<blockquote></blockquote>` inside an Outlook signature table.
-  if (!meaningful(quote)) return null
+  // ⚠️ THE LAST QUOTE THAT HAS ANYTHING IN IT — and taking the last one BLINDLY abandoned the
+  // message instead of the empty quote. Production row `8hc79tec7j`, cited by the previous commit
+  // as the reason this guard exists, carries 3642 characters of real quoted history in its first
+  // blockquote and a literal `<blockquote></blockquote>` in its Outlook signature table. Taking the
+  // document-order last and refusing on emptiness returned `null`, so the 3642 characters rendered
+  // fully expanded — the guard threw away the message rather than the empty quote it was aimed at.
+  const quote = quotes.filter(meaningful).pop()
+  if (!quote) return null
 
   // ⚠️ SOMETHING MUST PRECEDE IT AND NOTHING MAY FOLLOW IT, and both halves were defects.
   //
   // NOTHING AFTER: a `<blockquote>` with the author's own words after it is a PULL QUOTE, not a
   // reply boundary — StarterKit's blockquote is enabled in the composer, so a person can type one,
   // and it is byte-identical to a machine boundary. Collapsing it hides the thing being replied to
-  // and inverts the meaning. The composer's own quote is last in the body on 35 of 35 measured
-  // Sent rows, so requiring it costs the target population nothing.
+  // and inverts the meaning.
+  //
+  // ⚠️ AND IT IS NOT FREE, WHICH AN EARLIER COMMENT CLAIMED. "35 of 35 Sent rows have the quote
+  // last, so requiring it costs the target population nothing" was 35 of 36 — one row is a genuine
+  // BOTTOM-POSTED reply from the CRM's own composer, and this rule refuses it. Measured over the 47
+  // bare-blockquote rows in the sample, with this exact code in Chromium: 39 collapse (one toggle
+  // each, none opening to nothing) and 8 are refused, every one for content after the quote —
+  // bottom-posted replies, and disclaimers or signatures following the quoted history. Refusing is
+  // the conservative direction (the message renders exactly as it does today), and whether to trade
+  // those 8 for pull-quote safety is a ruling. Recorded rather than presented as costless.
   //
   // SOMETHING BEFORE: otherwise the whole message is quote and it renders as a bare `…`,
   // indistinguishable from a failed read. The first version guarded this with
   // `bodyText && quoted.length >= bodyText.length`, which SHORT-CIRCUITED PAST ITSELF exactly when
   // the body had no text — an image-only reply hid its own image behind the toggle. `meaningful`
   // counts images and tables for that reason.
-  const before = []
-  const after = []
-  let seen = false
-  for (const node of Array.from(doc.body.childNodes)) {
-    if (node === quote || (node.contains && node.contains(quote))) {
-      seen = true
-      continue
-    }
-    ;(seen ? after : before).push(node)
-  }
-  const holder = doc.createElement('div')
-  for (const n of before) holder.appendChild(n.cloneNode(true))
-  if (!meaningful(holder)) return null
-  const trailing = doc.createElement('div')
-  for (const n of after) trailing.appendChild(n.cloneNode(true))
-  if (meaningful(trailing)) return null
+  const { before, after } = surroundings(doc, quote)
+  if (!before) return null
+  if (after) return null
 
   collapse(doc, quote)
 

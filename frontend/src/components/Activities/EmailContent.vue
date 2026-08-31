@@ -37,15 +37,11 @@ if (gmailReplyToContent.length) {
 } else if (replyToContent.length) {
   _content.value = parseReplyToContent(doc, 'p.reply-to-content')
 } else {
-  // ⚠️ THE FOURTH SHAPE, AND IT IS THE COMMON ONE. The three selectors above match 21 of the 100
-  // most recent CRM-linked production Communications; a further 46 quote with a bare
-  // `<blockquote>`, and no Sent message is collapsed by any of them — the CRM's own composer emits
-  // a classless `<blockquote>`.
-  // ⚠️ CORRECTED: THIS SAID 63, WHICH WAS A RECEIVED-ROW COUNT WEARING A BARE-BLOCKQUOTE LABEL.
-  // The adversarial review replicated every other figure in this build exactly and could not
-  // replicate that one: 63 is the number of non-Sent rows in the same window. The case is
-  // unchanged — 46 of 100 is still more than double what the three selectors reach — but the
-  // number was wrong in two comments and a commit message.
+  // ⚠️ THE FOURTH SHAPE, AND IT IS THE COMMON ONE. Parsed in Chromium and matched with these
+  // actual selectors over the 100 most recent CRM-linked production Communications: the three
+  // above reach 20; a further 47 quote with a bare `<blockquote>`, and no Sent message is
+  // collapsed by any of them — the CRM's own composer emits a classless `<blockquote>`. See
+  // `collapseQuotedHistory.js` for why this number was wrong twice before.
   // LAST, so no existing behaviour changes: a message any of the three already handled takes the
   // same branch it took before. `null` means "nothing to collapse", which is not "collapsed to
   // nothing".
