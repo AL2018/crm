@@ -115,6 +115,16 @@ describe('AttentionRow — rendering', () => {
       .toContain('we wrote last')
   })
 
+  // ⚠️ THE ROW ANSWERS ONE QUESTION AND MUST NOT BE HANDED A WIDER ONE. Passing the page's whole
+  // `degraded` flag made a row claim the MESSAGE could not be read when it was the Leads or the
+  // status log that failed — inverting the very error this prop exists to prevent.
+  it('only claims a message could not be read when the message read is what failed', async () => {
+    const w = mount(AttentionRow, { props: { card: card({ snippet: '' }), degraded: false } })
+    await w.find('button').trigger('click')
+    expect(w.text()).toContain('No message text was recorded')
+    expect(w.text()).not.toContain('could not be read just now')
+  })
+
   it('says so when a message has no text rather than showing an empty box', async () => {
     const w = mount(AttentionRow, { props: { card: card({ snippet: '' }) } })
     await w.find('button').trigger('click')

@@ -133,6 +133,18 @@ describe('Attention — the round trip', () => {
     expect(w.text()).toContain('any enquiry waiting for a reply is missing')
   })
 
+  // ⚠️ THE PAGE MUST NOT TELL THE ROW THE WRONG THING. `degraded: ['leads']` means the Leads read
+  // failed, NOT that this row's message could not be read.
+  it('does not blame the message read when a different read failed', async () => {
+    const w = await render(payload({
+      total: 1, degraded: ['leads'],
+      cards: [card({ snippet: '' })],
+    }))
+    await w.findAll('button').find((b) => b.attributes('aria-expanded')).trigger('click')
+    expect(w.text()).toContain('No message text was recorded')
+    expect(w.text()).not.toContain('could not be read just now')
+  })
+
   it('names which read failed, so the gap is specific rather than a shrug', async () => {
     expect((await render(payload({ degraded: ['status'] }))).text())
       .toContain('the order is not the usual one')

@@ -111,7 +111,7 @@
       <div class="mt-1 text-ink-gray-7">
         {{ __('Nothing is being shown, and that is not the same as nothing waiting. If this keeps happening, the deals list may not be shared with you.') }}
       </div>
-      <div class="mt-2 text-xs text-ink-gray-5">{{ board.error.messages?.[0] || board.error }}</div>
+      <div class="mt-2 text-xs text-ink-gray-5">{{ errorDetail }}</div>
     </div>
 
     <div v-else-if="board.loading && !board.data" class="text-sm text-ink-gray-5">{{ __('Loading…') }}</div>
@@ -177,15 +177,21 @@
         </div>
       </div>
 
+      <!-- ⚠️ THE ROW ASKS ONE QUESTION: could the MESSAGE be read? `degraded` was widened from "the
+           ages read failed" to "any of three reads failed", and passing the wide flag here made a
+           row claim the message could not be read when it was LEADS or the STATUS log that failed
+           — inverting the exact error the prop exists to prevent. Found by the second gate pass. -->
       <AttentionRow v-for="card in shown" :key="card.deal" :card="card"
-                    :degraded="degraded" @open="open" />
+                    :degraded="degradedReads.includes('ages')" @open="open" />
     </div>
 
     <!-- ⚠️ WHEN THE AGE QUERY FALLS OVER THE SURFACE SAYS SO. The ages then come from the newest
          message by either side, which on a deal awaiting their decision is OUR last chase — the
          very reading rev 3 §7 replaced. Silence here cost four critical rows in the adversarial
          pass, with nothing on the page to explain why the Critical group had emptied. -->
-    <div v-if="degraded"
+    <!-- `v-if="degraded && board.data?.total"` — when the list is EMPTY the branch above already
+         carries this text, and saying it twice reads as two problems. -->
+    <div v-if="degraded && board.data?.total"
          class="mt-2 rounded border border-outline-amber-2 bg-surface-amber-1 p-2 text-xs text-ink-gray-8">
       {{ degradedText }}
     </div>
@@ -238,6 +244,13 @@ onMounted(() => board.reload())
 onActivated(() => board.reload())
 
 const stats = computed(() => board.data?.stats)
+// A frappe-ui resource may set `messages`, or a plain `Error`, or a string. Rendering the object
+// itself prints "{}", which tells the reader less than nothing.
+const errorDetail = computed(() => {
+  const e = board.error
+  if (!e) return ''
+  return e.messages?.[0] || e.message || (typeof e === 'string' ? e : __('Unknown error'))
+})
 const performedIsPartial = computed(() => {
   const covers = board.data?.stats?.performed_covers
   return Array.isArray(covers) && !covers.includes('CRM Lead')
@@ -290,6 +303,8 @@ const degradedText = computed(() => {
     status: __('Deal statuses could not be read, so the order is not the usual one and nothing is marked as having an out-of-date status.'),
     ages: __('The customer’s last message could not be read, so ages are measured from the last message either way and no message text is shown. A deal we have chased recently will read as younger than it is.'),
   }
+  // An unrecognised key renders as ITSELF rather than as nothing: a newer server
+  // naming a read this page has no wording for must still say something.
   return degradedReads.value.map((k) => say[k] || k).join(' ')
 })
 // §5 — free text across organisation or person AND subject, and a minimum age. They COMPOSE:
