@@ -45,8 +45,10 @@ describe('AttentionRow — a Lead travels every path a Deal does', () => {
   // ⚠️ A LEAD IS NEVER STALE — the band is a fact about CRM Deal Status, and a Lead's status plays
   // no part in anything. The server never sets the flag for a Lead; this makes the row's silence
   // on it a property rather than an accident of the data.
-  it('never shows the out-of-date marker on a Lead', () => {
-    expect(mount(AttentionRow, { props: { card: lead() } }).text()).not.toContain('stale')
+  it('never shows a status-currency badge on a Lead', () => {
+    const t = mount(AttentionRow, { props: { card: lead() } }).text()
+    expect(t).not.toContain('stale')
+    expect(t).not.toContain('current')
   })
 
   it('opens and expands like any other row', async () => {
@@ -146,13 +148,22 @@ describe('AttentionRow — rendering', () => {
       .toContain('Quotation Issued')
   })
 
-  // ⚠️ THE ROW SAYS WHY IT IS AT THE TOP. A band that reorders the list without explaining itself
-  // reads as the list being arbitrary. It is a fact about two timestamps, so it is worded as one.
-  it('marks a status the customer has written past, and only then', () => {
-    expect(mount(AttentionRow, { props: { card: card({ status_stale: true }) } }).text())
-      .toContain('stale')
+  // ⚠️ INVERTED ON PRODUCTION EVIDENCE. 15 of 17 open Deals are stale, so marking the stale ones
+  // marked almost everything. The badge names the RARE current ones; the ordering still uses the
+  // stale flag and is untouched.
+  it('marks the status that IS current, and only that one', () => {
     expect(mount(AttentionRow, { props: { card: card({ status_stale: false }) } }).text())
-      .not.toContain('stale')
+      .toContain('current')
+    expect(mount(AttentionRow, { props: { card: card({ status_stale: true }) } }).text())
+      .not.toContain('current')
+  })
+
+  // ⚠️ A LEAD HAS NO CRM Deal Status TO BE CURRENT OR STALE ABOUT. The server never sets the flag
+  // for a Lead, so an inverted badge would have marked every Lead "current" — a claim about a
+  // field it does not have.
+  it('never calls a Lead status current', () => {
+    expect(mount(AttentionRow, { props: { card: lead({ status_stale: false }) } }).text())
+      .not.toContain('current')
   })
 
   // ⚠️ THE CLASS IS THE BEHAVIOUR HERE, so it is asserted directly. Alan: the yellow has too little

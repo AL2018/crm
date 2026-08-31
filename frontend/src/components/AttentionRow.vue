@@ -31,15 +31,18 @@
          this list is about not missing correspondence, not about ranking deals — the Kanban ranks
          deals. Status decides the ORDER the server sends and can raise a row to critical; it
          never decides whether a row is here. -->
-    <!-- ⚠️ A COMPACT BADGE, NOT INLINE TEXT. Alan on production: "· out of date" truncated to
-         "out of …" on every row — carrying no information and consuming a column. A short badge
-         with the meaning in its tooltip fits, and the ordering it drives is unchanged. -->
+    <!-- ⚠️ THE BADGE MARKS THE CURRENT ONES, NOT THE STALE ONES — Alan's ruling after seeing it on
+         production. Measured there: 15 of 17 open Deals are stale, 8 because nobody ever set the
+         status and 7 because the contact wrote since. A mark on 15 of 17 rows is the default
+         wearing the costume of a signal; the information is in the two that are current.
+         ⚠️ THE ORDERING IS UNCHANGED. `status_stale` still puts those rows at the top of the list
+         — what inverted is only which rows say something about it. -->
     <span class="hidden w-32 shrink-0 truncate text-xs lg:block"
           :class="card.critical ? 'text-ink-gray-7' : 'text-ink-gray-5'">{{ card.status
-      }}<span v-if="card.status_stale"
-              class="ml-1 rounded bg-surface-gray-2 px-1 text-[10px] font-medium text-ink-gray-7"
-              :title="__('The status has not been set since the contact last wrote, so it may not be current.')"
-        >{{ __('stale') }}</span></span>
+      }}<span v-if="card.doctype !== 'CRM Lead' && !card.status_stale"
+              class="ml-1 rounded bg-surface-green-1 px-1 text-[10px] font-medium text-ink-green-3"
+              :title="__('Somebody set this status after the contact last wrote, so it is up to date.')"
+        >{{ __('current') }}</span></span>
 
     <!-- ⚠️ THE WORDS CARRY THE MEANING; THE COLOUR ONLY EMPHASISES IT (rev 3 §8). A critical row
          says "critical" in words, so the list still reads correctly to someone who cannot
