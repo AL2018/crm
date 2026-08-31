@@ -35,6 +35,21 @@ vi.mock('frappe-ui', () => ({
       <input v-else type="search" :value="modelValue" :placeholder="placeholder"
              @input="$emit('update:modelValue', $event.target.value)" />`,
   },
+  // ⚠️ THE PAGE USES `Select` DIRECTLY NOW, AND THE STUB IS STILL A STUB. It renders a native
+  // `<select>` so the interaction tests below can drive it, which is the ONLY thing a stub is
+  // good for. It says nothing about width — the real control's rendered class is asserted in
+  // `attentionFilterControl.test.js`, against the unmocked library, because that is the one
+  // question a stub structurally cannot answer.
+  Select: {
+    name: 'Select',
+    props: ['modelValue', 'options'],
+    emits: ['update:modelValue'],
+    template: `
+      <select :value="modelValue"
+              @change="$emit('update:modelValue', options[$event.target.selectedIndex].value)">
+        <option v-for="o in options" :key="String(o.value)" :value="o.value">{{ o.label }}</option>
+      </select>`,
+  },
 }))
 vi.mock('vue-router', () => ({ useRouter: () => ({ push }) }))
 vi.mock('@/components/LayoutHeader.vue', () => ({
@@ -192,22 +207,61 @@ describe('Attention — the round trip', () => {
     expect(widths(row)).toEqual(h)
   })
 
-  // ⚠️ THE ROW MUST FIT AT A NORMAL WINDOW WIDTH — the scroll is the narrow-window fallback, not
-  // the normal case. jsdom has no layout, so this asserts the thing that actually caused the
-  // overflow: the declared widths and the length of the option labels. A control that fills
-  // rather than sizing to its content is the defect; a long sentence in a `select` is the same
-  // defect wearing different clothes, because a select is as wide as its widest option.
-  it('sizes each filter control to its content', async () => {
+  // ⚠️ WHAT THIS CAN AND CANNOT SEE, STATED, BECAUSE THE VERSION IT REPLACES DID NOT KNOW.
+  // `frappe-ui` is mocked in this file, so every assertion here is about what the PAGE passes to
+  // its controls — which component, with which class. It cannot see what the library then renders,
+  // and the previous test believed it could: it read widths off a stubbed `<select>` the
+  // application never renders, and stayed green while the shipped row overflowed at every window
+  // width. The rendered side is `attentionFilterControl.test.js`.
+  it('gives each filter control a content width, on the component that honours one', async () => {
     const w = await render(payload({ total: 1, cards: [card()] }))
     const search = w.find('input[type="search"]')
     expect((search.attributes('class') || '')).toContain('w-44')
-    for (const sel of w.findAll('select')) {
-      // no width class at all — a select is content-width by default, and giving it one is what
-      // makes it fill
-      expect((sel.attributes('class') || '')).not.toMatch(/\bw-\d/)
-      for (const opt of sel.findAll('option'))
-        expect(opt.text().length).toBeLessThanOrEqual(14)
+    // ⚠️ THE COMPONENT IS THE ASSERTION. `FormControl type="select"` hard-codes `w-full` for every
+    // select-like type with no prop to turn it off, so reverting to it re-ships the defect — and
+    // that revert is invisible to any assertion about classes alone.
+    const selects = w.findAllComponents({ name: 'Select' })
+    expect(selects).toHaveLength(3)
+    for (const sel of selects) {
+      const cls = sel.attributes('class') || ''
+      // ⚠️ `w-auto` IS DECORATIVE AND IS ASSERTED AS DOCUMENTATION, NOT AS A GUARD. With
+      // `hasLabeling` false the library applies no width class at all and the trigger's base is
+      // `inline-flex`, so it is already content-width — removing `w-auto` changes nothing that
+      // renders. Kept and labelled because it states the intent at the call site; the assertion
+      // that actually carries the weight is `findAllComponents({ name: 'Select' })` above.
+      expect(cls).toContain('w-auto')
+      expect(cls).toContain('shrink-0')
+      expect(cls).not.toContain('w-full')
     }
+    // ⚠️ AN ENGLISH PROXY, AND IT IS NOT THE WHOLE RULE. `__` is identity under test, so this
+    // pins untranslated English only — and the trigger sizes itself to the CURRENTLY SELECTED
+    // label (`Select.vue`'s `.select-trigger-sizer::after { content: attr(data-width-text) }`),
+    // so the row's width moves as the user chooses. German-length labels were measured in the
+    // browser: triggers 58/96/128 → 145/145/176 and the row 482 → 674px, which still fits at 1024
+    // and degrades into the horizontal scroll below ~900. So a long locale reaches the intended
+    // FALLBACK rather than breaking — but nothing here would notice one that went further.
+    for (const opt of w.findAll('option'))
+      expect(opt.text().length).toBeLessThanOrEqual(14)
+  })
+
+  // ⚠️ THE SCROLL AND THE NO-WRAP WERE CLAIMED AND UNPINNED. `7427eb7e` said "the horizontal
+  // scroll stays, doing the job it was meant for"; deleting `overflow-x-auto` outright, and
+  // letting the row wrap into three lines, both left the suite green.
+  it('keeps the row on one line with the scroll as its fallback', async () => {
+    const w = await render(payload({ total: 1, cards: [card()] }))
+    // Addressed by test id, not by walking up from the input: the stub and the real control put
+    // the box at different depths, so a DOM walk asserts the harness rather than the page.
+    const row = w.find('[data-testid="attention-filters"]')
+    expect(row.attributes('class')).toContain('flex-nowrap')
+    expect(row.attributes('class')).toContain('overflow-x-auto')
+  })
+
+  // ⚠️ THE COMMIT MOVED USER-VISIBLE TEXT INTO AN ARIA ATTRIBUTE AND LEFT IT UNASSERTED —
+  // deleting the `aria-label` was a surviving mutant. The placeholder is now one word, so this
+  // attribute is the only thing naming what the box searches.
+  it('names the search box for a screen reader, since its placeholder no longer does', async () => {
+    const w = await render(payload({ total: 1, cards: [card()] }))
+    expect(w.find('input[type="search"]').attributes('aria-label')).toBe('Search name or subject')
   })
 
   it('names the columns Alan asked for', async () => {
@@ -435,6 +489,20 @@ describe('Attention — search and filter', () => {
     const w = await type(await render(many()), 'quarry')
     expect(rows(w)).toHaveLength(1)
     expect(w.text()).toContain('Quarry')
+  })
+
+  // ⚠️ THE SUBJECT IS THE INDEX FOR A PERSON'S NAME AGAIN. A `who_alt` field was added here on
+  // 1 September 2026 because `lc_winnow` blanked a subject matching the record's own composed
+  // default, which removed the contact's name from this search while leaving the row on the list.
+  // That suppression was removed the same day (`lc_winnow f9fd28a`), so the name arrives inside the
+  // subject as it always did, and this pins that it is findable.
+  it('searches a name that only appears inside the subject', async () => {
+    const w = await type(await render(payload({
+      total: 1,
+      cards: [card({ deal: 'D9', who: 'Johnstone Events', subject: 'Nina Johnstone (#D9)' })],
+    })), 'nina')
+    expect(rows(w)).toHaveLength(1)
+    expect(w.text()).toContain('Johnstone Events')
   })
 
   it('searches the subject as well, because two deals share an organisation', async () => {
