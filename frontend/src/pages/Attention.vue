@@ -209,7 +209,8 @@
            row claim the message could not be read when it was LEADS or the STATUS log that failed
            — inverting the exact error the prop exists to prevent. Found by the second gate pass. -->
       <AttentionRow v-for="card in shown" :key="card.deal" :card="card"
-                    :degraded="degradedReads.includes('ages')" @open="open" />
+                    :degraded="degradedReads.includes('ages')"
+                    :status-unknown="degradedReads.includes('status')" @open="open" />
     </div>
 
     <!-- ⚠️ WHEN THE AGE QUERY FALLS OVER THE SURFACE SAYS SO. The ages then come from the newest
@@ -337,6 +338,18 @@ const degradedText = computed(() => {
 // §5 — free text across organisation or person AND subject, and a minimum age. They COMPOSE:
 // each narrows what the previous one left, which is what "filters compose" means and what the
 // "of N" on the counts is measured against.
+// ⚠️ ONE AGE FOR THE READER, USED BY EVERY CONTROL THAT MENTIONS AGE. The row renders
+// `display_age_days`, which falls back to how long OUR message has been sitting when the contact
+// has never written. The filter and the sort were left reading `age_days`, so on three of sixteen
+// live rows the column said "4 days" while the age filter and the day sort treated the row as
+// having no age at all — a control whose label contradicted the row beneath it. Found at the
+// production gate, on CRM-DEAL-2026-00093, the very row that prompted the two-age split.
+//
+// ⚠️ THE SERVER'S ORDERING IS A DIFFERENT QUESTION AND IS UNTOUCHED. It ranks on `age_days` by
+// ruling, because that is time since the CONTACT went quiet. This is the reader's age, and the
+// only rule it has to obey is that everything the reader sees agrees with everything else.
+const shownAge = (c) => c.display_age_days ?? c.age_days ?? null
+
 const query = ref('')
 const minDays = ref(0)
 const typeFilter = ref('')
@@ -361,7 +374,7 @@ const shown = computed(() => {
     // ⚠️ AN UNKNOWN AGE IS NOT A YOUNG ONE. A row whose age could not be read must not be
     // silently dropped by an age filter that reads `null` as zero — that is the same class of
     // defect as the unbanded rows vanishing from the list.
-    if (minDays.value > 0 && !(c.age_days === null || c.age_days >= minDays.value)) return false
+    if (minDays.value > 0 && !(shownAge(c) === null || shownAge(c) >= minDays.value)) return false
     if (!q) return true
     return `${c.who || ''} ${c.subject || ''}`.toLowerCase().includes(q)
   })
@@ -381,8 +394,8 @@ const shown = computed(() => {
     (a, b) =>
       // An unknown age sorts last WHICHEVER WAY the sort runs — an unknown is not an old thing
       // and it is not a new one either.
-      (a.age_days === null) - (b.age_days === null) ||
-      dir * ((b.age_days || 0) - (a.age_days || 0)),
+      (shownAge(a) === null) - (shownAge(b) === null) ||
+      dir * ((shownAge(b) || 0) - (shownAge(a) || 0)),
   )
 })
 

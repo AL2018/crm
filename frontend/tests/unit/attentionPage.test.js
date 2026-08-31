@@ -177,10 +177,19 @@ describe('Attention — the round trip', () => {
       .filter(Boolean)
     expect(header.exists()).toBe(true)
     // every width the header declares must appear on the row, in the same order
+    // ⚠️ ORDER, NOT MEMBERSHIP — the comment claimed order and the code checked containment, so
+    // reordering the row's columns while keeping every width stayed green. That is exactly the
+    // reader-visible defect this test exists for, and a justification that overstates itself is
+    // §0.2g. One character: `toEqual`.
+    // ⚠️ THE SPACER WIDTH WAS A GUESS AND IS NOW A FACT. The header's first cell stands in for the
+    // row's expander; that button had no width at all, so `w-[22px]` was an estimate of its
+    // content width and the CRM Org. label sat a few pixels off its column. The button carries
+    // the same class now, and this asserts they match rather than assuming it.
+    const expander = row.find('button')
+    expect((expander.attributes('class') || '').split(/\s+/)).toContain('w-[22px]')
     const h = widths(header).filter((c) => c !== 'w-[22px]')
     expect(h).toEqual(['w-44', 'w-32', 'w-20', 'w-28', 'w-16'])
-    const r = widths(row)
-    for (const cls of h) expect(r).toContain(cls)
+    expect(widths(row)).toEqual(h)
   })
 
   it('names the columns Alan asked for', async () => {
@@ -198,6 +207,46 @@ describe('Attention — the round trip', () => {
     expect(t).toContain('Items clear when you reply')
     expect(t).toContain('Won, Lost and Junk remove them for good')
     expect(t).not.toContain('cleared by Won')
+  })
+
+  // ⚠️ EVERY CONTROL THAT MENTIONS AGE READS THE NUMBER THE COLUMN SHOWS. The filter and the sort
+  // were left on `age_days` while the column moved to `display_age_days`, so on three of sixteen
+  // live rows the column said "4 days" while the age filter and the day sort treated the row as
+  // ageless. A control whose label contradicts the row beneath it.
+  it('filters on the age the reader can see, not a different one', async () => {
+    const w = await render(payload({
+      total: 2,
+      cards: [card({ deal: 'OLD', who: 'OLD', age_days: null, display_age_days: 30 }),
+              card({ deal: 'NEW', who: 'NEW', age_days: null, display_age_days: 1 })],
+    }))
+    await w.findAll('select')[1].findAll('option')[2].setSelected()   // 5+ days
+    expect(rows(w)).toHaveLength(1)
+    expect(w.text()).toContain('OLD')
+    expect(w.text()).not.toContain('NEW')
+  })
+
+  it('sorts on the age the reader can see, in both directions', async () => {
+    const w = await render(payload({
+      total: 2,
+      cards: [card({ deal: 'NEW', who: 'NEW', age_days: null, display_age_days: 4 }),
+              card({ deal: 'OLD', who: 'OLD', age_days: null, display_age_days: 30 })],
+    }))
+    await w.findAll('select')[2].findAll('option')[1].setSelected()   // longest waiting first
+    expect(rows(w).map((r) => (r.text().match(/OLD|NEW/) || [''])[0])).toEqual(['OLD', 'NEW'])
+    await w.findAll('select')[2].findAll('option')[2].setSelected()   // shortest first
+    expect(rows(w).map((r) => (r.text().match(/OLD|NEW/) || [''])[0])).toEqual(['NEW', 'OLD'])
+  })
+
+  // ⚠️ AN UNANSWERED QUESTION MUST NOT BECOME A POSITIVE CLAIM. When the status read fails the
+  // server sends `status_stale: false` for every Deal — which, once the badge inverted, made every
+  // row assert "somebody set this after the contact wrote" off data nobody could read, under a
+  // banner saying nothing is marked out of date.
+  it('never calls a status current while the status read is degraded', async () => {
+    const w = await render(payload({
+      total: 1, degraded: ['status'], cards: [card({ status_stale: false })],
+    }))
+    expect(w.text()).not.toContain('current')
+    expect(w.text()).toContain('the order is not the usual one')
   })
 
   it('names which read failed, so the gap is specific rather than a shrug', async () => {

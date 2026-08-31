@@ -12,7 +12,7 @@
          reading what the customer said would navigate away from the list — the opposite of what
          an expander is for. -->
     <button
-      class="-my-1 shrink-0 self-stretch px-1 text-ink-gray-4 hover:text-ink-gray-7"
+      class="-my-1 w-[22px] shrink-0 self-stretch text-ink-gray-4 hover:text-ink-gray-7"
       :aria-expanded="open"
       :aria-label="open ? __('Hide message') : __('Show message')"
       @click.stop="open = !open"
@@ -39,7 +39,7 @@
          — what inverted is only which rows say something about it. -->
     <span class="hidden w-32 shrink-0 truncate text-xs lg:block"
           :class="card.critical ? 'text-ink-gray-7' : 'text-ink-gray-5'">{{ card.status
-      }}<span v-if="card.doctype !== 'CRM Lead' && !card.status_stale"
+      }}<span v-if="statusIsKnownCurrent"
               class="ml-1 rounded bg-surface-green-1 px-1 text-[10px] font-medium text-ink-green-3"
               :title="__('Somebody set this status after the contact last wrote, so it is up to date.')"
         >{{ __('current') }}</span></span>
@@ -119,7 +119,29 @@ import { ref, computed } from 'vue'
 const props = defineProps({
   card: { type: Object, required: true },
   degraded: { type: Boolean, default: false },
+  // ⚠️ SET WHEN THE STATUS READ ITSELF FAILED. Without it the badge turns an unanswered question
+  // into a positive claim — see below.
+  statusUnknown: { type: Boolean, default: false },
 })
+
+// ⚠️ AN EXPLICIT `false`, NOT A FALSY ONE, AND NOT WHILE THE READ IS DEGRADED. The server has
+// THREE answers about a status — stale, current, and "could not ask" — and `assemble`'s own
+// comment says an unanswered question must not become a claim in either direction. That held
+// while `false` meant *no badge*; inverting the badge made `false` mean *a positive claim*, and
+// two reachable states then asserted "somebody set this after the contact wrote" off data nobody
+// could read:
+//
+//   * `last_status_change` fails -> every Deal is sent `status_stale: false` -> every row claims
+//     current, under a banner saying nothing is marked out of date. Silent-and-safe became
+//     silent-and-wrong.
+//   * an older or skewed `lc_winnow` sends no `status_stale` at all, and `!undefined` is `true`.
+//     The two apps deploy separately; the page already handles skew everywhere else.
+//
+// Both found at the production gate.
+const statusIsKnownCurrent = computed(() =>
+  props.card.doctype !== 'CRM Lead' &&
+  props.card.status_stale === false &&
+  !props.statusUnknown)
 defineEmits(['open'])
 
 const open = ref(false)

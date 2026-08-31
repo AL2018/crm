@@ -29,6 +29,11 @@ const card = (over = {}) => ({
  * population — which is `CC_STANDING_RULES §0.2i`, and is exactly how a broken Lead route survived
  * 177 green tests. The block below walks a Lead down this component's paths.
  */
+// The Last By cell, read as an element rather than matched as a substring of the whole row.
+const lastBy = (w) => w.findAll('span')
+  .map((s) => s.text().trim())
+  .find((t) => t === 'us' || t === 'contact' || t === 'unknown')
+
 const lead = (over = {}) => card({
   deal: 'CRM-LEAD-2026-00042', doctype: 'CRM Lead', who: 'Aberfeldy Barn',
   status: 'New', critical: false, status_stale: false, ...over,
@@ -92,6 +97,29 @@ describe('AttentionRow — rendering', () => {
       .not.toContain('stage')
   })
 
+  // ⚠️ THE SENTENCE THAT EXPLAINS THE BADGE IS THE POINT OF THE BADGE. `age` and `stage` were
+  // pinned; the wording that tells the reader what they mean was not, so swapping the two
+  // explanations — or emptying them — stayed green.
+  it('explains each critical reason in words, and does not swap them', () => {
+    const t = (w) => w.find('[title]').attributes('title') || ''
+    const age = mount(AttentionRow, { props: { card: card({ critical_because: ['age'] }) } })
+    const stage = mount(AttentionRow, { props: { card: card({ critical_because: ['stage'] }) } })
+    const ageTip = age.findAll('span').map((s) => s.attributes('title')).filter(Boolean).join(' ')
+    const stageTip = stage.findAll('span').map((s) => s.attributes('title')).filter(Boolean).join(' ')
+    expect(ageTip).toContain('no reply for 5 days or more')
+    expect(ageTip).not.toContain('far enough along')
+    expect(stageTip).toContain('far enough along to lose')
+    expect(stageTip).not.toContain('no reply for')
+  })
+
+  // ⚠️ A REASON WITHOUT A FLAG IS AS WRONG AS A FLAG WITHOUT A REASON, and the old assertion was
+  // vacuous: it checked `.not.toContain('stage')` against a fixture carrying no reason at all.
+  it('shows nothing in the Critical column when the row is not critical', () => {
+    const w = mount(AttentionRow,
+      { props: { card: card({ critical: false, critical_because: ['age', 'stage'] }) } })
+    expect(w.text()).not.toContain('age + stage')
+  })
+
   it('reads the age the server computed and never recomputes one', () => {
     expect(mount(AttentionRow, { props: { card: card({ display_age_days: 18 }) } }).text())
       .toContain('18 days')
@@ -134,9 +162,12 @@ describe('AttentionRow — rendering', () => {
     expect(t).toContain('Ooh! Media')
     expect(t).toContain('Re: Quotation: QTN-00213')
     expect(t).toContain('Quotation Issued')
-    expect(t).toContain('contact')
-    expect(mount(AttentionRow, { props: { card: card({ state: 'awaiting_them' }) } }).text())
-      .toContain('us')
+    // ⚠️ THE LABEL ELEMENT, NOT A SUBSTRING OF THE ROW. "us" is two characters and the row text
+    // includes the subject and organisation, both from inbound mail: a subject reading
+    // "bus hire because of us" passed this assertion on a row labelled `contact`.
+    expect(lastBy(mount(AttentionRow, { props: { card: card() } }))).toBe('contact')
+    expect(lastBy(mount(AttentionRow, { props: { card: card({ state: 'awaiting_them' }) } })))
+      .toBe('us')
   })
 
   // ⚠️ STATUS IS CONTEXT ON THE ROW. It orders the list and can raise a row to critical; it must
@@ -155,6 +186,20 @@ describe('AttentionRow — rendering', () => {
     expect(mount(AttentionRow, { props: { card: card({ status_stale: false }) } }).text())
       .toContain('current')
     expect(mount(AttentionRow, { props: { card: card({ status_stale: true }) } }).text())
+      .not.toContain('current')
+  })
+
+  // ⚠️ AN ABSENT FLAG IS NOT A FALSE ONE. `!undefined` is `true`, so an older or skewed
+  // `lc_winnow` — the two apps deploy separately — would have had every row claim "current".
+  it('says nothing when the server sent no status flag at all', () => {
+    const c = card()
+    delete c.status_stale
+    expect(mount(AttentionRow, { props: { card: c } }).text()).not.toContain('current')
+  })
+
+  it('says nothing when the status read failed', () => {
+    expect(mount(AttentionRow,
+      { props: { card: card({ status_stale: false }), statusUnknown: true } }).text())
       .not.toContain('current')
   })
 
