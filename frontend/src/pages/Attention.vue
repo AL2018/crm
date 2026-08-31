@@ -24,6 +24,10 @@
       <div><span class="text-ink-gray-5">{{ __('Performed') }}</span>
         <span class="ml-1.5 font-medium text-ink-gray-8">{{ stats.performed ?? '—' }}</span>
         <span class="ml-1 text-xs text-ink-gray-4">{{ __('answered and off the list') }}</span>
+        <!-- ⚠️ IT COUNTS DEALS ONLY WHILE "To go" COUNTS BOTH, so a Lead answered this week is
+             counted nowhere. Said on the page rather than left for somebody to discover by
+             watching the Lead half never shrink. -->
+        <span v-if="performedIsPartial" class="ml-1 text-xs text-ink-gray-4">{{ __('deals only') }}</span>
         <!-- ⚠️ THE PERIOD IS ON THE PAGE, NOT ONLY IN THE CODE. A count whose window is invisible
              is a count nobody can check. Rev 3 §6: a rolling week, so Monday does not open on a
              blank. -->
@@ -98,7 +102,19 @@
       <Button v-if="filtering" :label="__('Clear')" variant="ghost" @click="clearFilters" />
     </div>
 
-    <div v-if="board.loading && !board.data" class="text-sm text-ink-gray-5">{{ __('Loading…') }}</div>
+    <!-- ⚠️ AN ERROR MUST NEVER RENDER AS A BLANK PAGE. There was no error branch at all, so any
+         failure — including a user with Lead access but not Deal access, who is refused by the
+         endpoint's permission gate — got a header and nothing else. An empty surface reads as an
+         all-clear with even less to substantiate it than the green box. -->
+    <div v-if="board.error" class="rounded border border-outline-red-2 bg-surface-red-1 p-4 text-sm">
+      <div class="font-medium text-ink-red-6">{{ __('This list could not be loaded.') }}</div>
+      <div class="mt-1 text-ink-gray-7">
+        {{ __('Nothing is being shown, and that is not the same as nothing waiting. If this keeps happening, the deals list may not be shared with you.') }}
+      </div>
+      <div class="mt-2 text-xs text-ink-gray-5">{{ board.error.messages?.[0] || board.error }}</div>
+    </div>
+
+    <div v-else-if="board.loading && !board.data" class="text-sm text-ink-gray-5">{{ __('Loading…') }}</div>
 
     <!-- ⚠️ THE EMPTY STATE MUST NOT CLAIM AN ALL-CLEAR IT CANNOT SUBSTANTIATE. Three ways to be
          empty and only one is good news, so green is the LAST branch. Carried across from the desk
@@ -110,7 +126,7 @@
           {{ __('There is nothing on this list for you, and that is not the same as an all-clear.') }}
         </div>
         <div class="mt-1 text-ink-gray-5">
-          {{ __('Either there are no open deals at all, or none of the open deals are yours to see. This list cannot tell the difference, so it is not telling you everything is answered.') }}
+          {{ __('Either there are no open deals or leads at all, or none of them are yours to see. This list cannot tell the difference, so it is not telling you everything is answered.') }}
         </div>
       </div>
       <div v-else-if="board.data.unlinked || board.data.unassessable"
@@ -120,8 +136,16 @@
         </div>
         <div class="mt-1 text-ink-gray-5">{{ causeText }}</div>
       </div>
+      <!-- ⚠️ AND A DEGRADED READ CANNOT REACH THE GREEN BOX. A failed Lead read used to delete the
+           whole Lead half of the list; if the Deals were all answered the surface then painted the
+           all-clear over it. That is the false all-clear returning by a new door. -->
+      <div v-else-if="degradedReads.length"
+           class="rounded border border-outline-amber-2 bg-surface-amber-1 p-4 text-sm text-ink-gray-8">
+        <div class="font-medium">{{ __('Nothing to show, and part of this list could not be read.') }}</div>
+        <div class="mt-1">{{ degradedText }}</div>
+      </div>
       <div v-else class="rounded border border-outline-green-2 bg-surface-green-1 p-4 text-ink-green-3">
-        {{ __('Nothing is waiting. All {0} open deals have been answered.', [board.data.open_total]) }}
+        {{ __('Nothing is waiting. All {0} open deals and leads have been answered.', [board.data.open_total]) }}
       </div>
     </div>
 
@@ -149,7 +173,7 @@
       <div v-if="filtering && !shown.length" class="rounded border border-outline-gray-2 p-4 text-sm">
         <div class="font-medium text-ink-gray-8">{{ __('Nothing matches this filter.') }}</div>
         <div class="mt-1 text-ink-gray-5">
-          {{ __('{0} deals are still waiting — clear the filter to see them.', [stats?.to_go ?? 0]) }}
+          {{ __('{0} records are still waiting — clear the filter to see them.', [stats?.to_go ?? 0]) }}
         </div>
       </div>
 
@@ -162,8 +186,8 @@
          very reading rev 3 §7 replaced. Silence here cost four critical rows in the adversarial
          pass, with nothing on the page to explain why the Critical group had emptied. -->
     <div v-if="degraded"
-         class="mt-2 rounded border border-outline-amber-2 bg-surface-amber-1 p-2 text-xs text-ink-amber-3">
-      {{ __('The customer’s last message could not be read just now, so ages are measured from the last message either way and no message text is shown. A deal we have chased recently will read as younger than it is.') }}
+         class="mt-2 rounded border border-outline-amber-2 bg-surface-amber-1 p-2 text-xs text-ink-gray-8">
+      {{ degradedText }}
     </div>
 
     <div v-if="board.data?.unlinked || board.data?.unassessable"
@@ -214,6 +238,10 @@ onMounted(() => board.reload())
 onActivated(() => board.reload())
 
 const stats = computed(() => board.data?.stats)
+const performedIsPartial = computed(() => {
+  const covers = board.data?.stats?.performed_covers
+  return Array.isArray(covers) && !covers.includes('CRM Lead')
+})
 
 // ⚠️ `cards` IS THE SERVER'S OWN ORDERED LIST AND THIS PAGE NEVER RE-SORTS IT. The order is
 // Alan's final ordering ruling of 31 August: Deals by CRM Deal Status position, days secondary
@@ -243,8 +271,27 @@ const allCards = computed(() => {
 // ⚠️ ANYTHING THAT IS NOT THE GOOD ANSWER IS THE DEGRADED ONE, including `undefined` — which is
 // what an older server sends, and is precisely the case where the ages ARE the older kind. A test
 // for equality with the failure string left the banner silent in the one situation it exists for.
-const degraded = computed(() =>
-  !!board.data && board.data.age_source !== 'their_last_message')
+// ⚠️ THREE READS CAN FAIL AND EACH ONE CHANGES SOMETHING DIFFERENT — what is on the list, what
+// order it is in, or how old it looks. The server names which failed; this only says so. An older
+// server sends no `degraded` at all, and `age_source` still carries the age half, so both are read.
+const degradedReads = computed(() => {
+  const d = board.data
+  if (!d) return []
+  if (Array.isArray(d.degraded)) return d.degraded
+  // ⚠️ A MISSING `age_source` IS DEGRADED, NOT HEALTHY. An older server sends neither key, and
+  // that is exactly the case where the ages ARE the older kind. Guarding on truthiness here
+  // silently made the oldest server the quietest one.
+  return d.age_source === 'their_last_message' ? [] : ['ages']
+})
+const degraded = computed(() => degradedReads.value.length > 0)
+const degradedText = computed(() => {
+  const say = {
+    leads: __('Leads could not be read, so any enquiry waiting for a reply is missing from this list.'),
+    status: __('Deal statuses could not be read, so the order is not the usual one and nothing is marked as having an out-of-date status.'),
+    ages: __('The customer’s last message could not be read, so ages are measured from the last message either way and no message text is shown. A deal we have chased recently will read as younger than it is.'),
+  }
+  return degradedReads.value.map((k) => say[k] || k).join(' ')
+})
 // §5 — free text across organisation or person AND subject, and a minimum age. They COMPOSE:
 // each narrows what the previous one left, which is what "filters compose" means and what the
 // "of N" on the counts is measured against.
@@ -310,7 +357,7 @@ const causeText = computed(() => {
   if (!d) return ''
   const parts = []
   if (d.unlinked)
-    parts.push(__('{0} of {1} open deals you can see have no correspondence recorded at all',
+    parts.push(__('{0} of {1} open deals and leads you can see have no correspondence recorded at all',
       [d.unlinked, d.open_total]))
   if (d.unassessable)
     parts.push(__('{0} cannot be read because the direction of the last message is unusable',
@@ -318,7 +365,16 @@ const causeText = computed(() => {
   return parts.join(__('; ')) + __(', so they cannot appear here. That is not an all-clear.')
 })
 
+// ⚠️ ROUTE BY TYPE. Every row went to the DEAL route until an adversarial pass caught it — so
+// clicking a Lead sent you to `/crm/deals/CRM-LEAD-2026-000xx`, which is nowhere. The round trip
+// is Alan's stated acceptance test for this surface, and it was broken for the population he calls
+// the failure costing the business most. 171 green tests missed it because the only click test
+// used a Deal card.
 function open(card) {
-  router.push({ name: 'Deal', params: { dealId: card.deal } })
+  if (card.doctype === 'CRM Lead') {
+    router.push({ name: 'Lead', params: { leadId: card.deal } })
+  } else {
+    router.push({ name: 'Deal', params: { dealId: card.deal } })
+  }
 }
 </script>

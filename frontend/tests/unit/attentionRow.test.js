@@ -104,6 +104,17 @@ describe('AttentionRow — rendering', () => {
     expect(w.html()).toContain('text-ink-gray-8')
   })
 
+  // ⚠️ AN UNREADABLE DIRECTION MUST NOT CLAIM THE CUSTOMER WAS ANSWERED. Two branches meant every
+  // non-`waiting_on_us` state said "we wrote last", which on an `unknown` row is a false all-clear
+  // one row wide.
+  it('never says we wrote last when the direction could not be read', () => {
+    const t = mount(AttentionRow, { props: { card: card({ state: 'unknown' }) } }).text()
+    expect(t).toContain('direction unreadable')
+    expect(t).not.toContain('we wrote last')
+    expect(mount(AttentionRow, { props: { card: card({ state: 'awaiting_them' }) } }).text())
+      .toContain('we wrote last')
+  })
+
   it('says so when a message has no text rather than showing an empty box', async () => {
     const w = mount(AttentionRow, { props: { card: card({ snippet: '' }) } })
     await w.find('button').trigger('click')

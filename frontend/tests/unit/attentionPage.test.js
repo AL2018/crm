@@ -13,7 +13,7 @@ import { vi } from 'vitest'
  * last and must be reachable only when the surface can actually substantiate it.
  */
 
-const board = reactive({ data: null, loading: false, reload: vi.fn() })
+const board = reactive({ data: null, loading: false, error: null, reload: vi.fn() })
 const push = vi.fn()
 
 // ⚠️ `FormControl` IS STUBBED AS A REAL INPUT, NOT AS AN INERT PLACEHOLDER. The filter tests
@@ -53,7 +53,9 @@ const payload = (over = {}) => ({
   columns: { '0-1 day': [], '2-4 days': [], '5+ days': [] }, unbanded: [],
   total: 0, critical: 0, open_total: 12, unlinked: 0, unassessable: 0,
   age_source: 'their_last_message',
-  stats: { since: '2026-08-24', days: 7, performed: 4, to_go: 0, to_clear: 4 }, ...over,
+  degraded: [],
+  stats: { since: '2026-08-24', days: 7, performed: 4, performed_covers: ['CRM Deal'],
+           to_go: 0, to_clear: 4 }, ...over,
 })
 const rows = (w) => w.findAll('[data-testid="attention-row"]')
 
@@ -80,7 +82,7 @@ describe('Attention — the empty state cannot claim an all-clear it cannot subs
 
   it('claims the all-clear ONLY when every open deal was seen and answered', async () => {
     const w = await render(payload())
-    expect(w.text()).toContain('All 12 open deals have been answered')
+    expect(w.text()).toContain('All 12 open deals and leads have been answered')
   })
 
   // ⚠️ COUNT THE ROWS. The XSS check set three fields to the same string, so it passed on `who`
@@ -110,6 +112,49 @@ describe('Attention — the round trip', () => {
     expect(push).toHaveBeenCalledWith({ name: 'Deal', params: { dealId: 'CRM-DEAL-2026-00001' } })
   })
 
+  // ⚠️ A LEAD GOES TO THE LEAD ROUTE. Every row went to the DEAL route, so clicking a Lead landed
+  // on `/crm/deals/CRM-LEAD-…`, which is nowhere — and the round trip is the acceptance test for
+  // this whole surface. 171 green tests missed it because the only click test used a Deal.
+  it('opens a Lead on the Lead route, not the Deal route', async () => {
+    push.mockClear()
+    const w = await render(payload({
+      total: 1, cards: [card({ deal: 'CRM-LEAD-2026-00042', doctype: 'CRM Lead' })],
+    }))
+    await w.find('[data-testid="attention-row"]').trigger('click')
+    expect(push).toHaveBeenCalledWith({ name: 'Lead', params: { leadId: 'CRM-LEAD-2026-00042' } })
+  })
+
+  // ⚠️ A DEGRADED READ CANNOT REACH THE GREEN BOX. A failed Lead read deleted the whole Lead half
+  // of the list; with the Deals all answered the surface then painted the all-clear over it.
+  it('never claims the all-clear when part of the list could not be read', async () => {
+    const w = await render(payload({ degraded: ['leads'] }))
+    expect(w.text()).not.toContain('have been answered')
+    expect(w.text()).toContain('part of this list could not be read')
+    expect(w.text()).toContain('any enquiry waiting for a reply is missing')
+  })
+
+  it('names which read failed, so the gap is specific rather than a shrug', async () => {
+    expect((await render(payload({ degraded: ['status'] }))).text())
+      .toContain('the order is not the usual one')
+  })
+
+  // ⚠️ AN ERROR MUST NOT RENDER AS A BLANK PAGE — an empty surface reads as an all-clear with even
+  // less to substantiate it than the green box.
+  it('says so when the list could not be loaded at all', async () => {
+    board.error = { messages: ['Not permitted'] }
+    try {
+      const w = await render(null)
+      expect(w.text()).toContain('could not be loaded')
+      expect(w.text()).toContain('not the same as nothing waiting')
+    } finally {
+      board.error = null
+    }
+  })
+
+  it('qualifies "Performed" while it only covers deals', async () => {
+    expect((await render(payload())).text()).toContain('deals only')
+  })
+
   it('re-reads on arrival, so returning shows the current truth and not a stale page', async () => {
     board.reload.mockClear()
     await render(payload())
@@ -132,10 +177,12 @@ describe('Attention — the round trip', () => {
   // ⚠️ SILENCE WAS THE DEFECT. One caught exception server-side takes every age away; the rows
   // still render, the Critical group empties, and nothing said why.
   it('says so when the ages are the less-truthful kind', async () => {
-    expect((await render(payload({ age_source: 'newest_correspondence' }))).text())
-      .toContain('could not be read just now')
+    // The real server sets both together — `degraded` names what failed, `age_source` says which
+    // kind of age survived — so the fixture carries both rather than half a payload.
+    expect((await render(payload({ age_source: 'newest_correspondence', degraded: ['ages'] }))).text())
+      .toContain('ages are measured from the last message either way')
     expect((await render(payload())).text())
-      .not.toContain('could not be read just now')
+      .not.toContain('ages are measured from the last message either way')
   })
 
   // ⚠️ THE SERVER'S ORDER IS THE ORDER. Alan's final ruling of 31 August puts Deals in CRM Deal
@@ -190,9 +237,11 @@ describe('Attention — the round trip', () => {
   // ⚠️ AN OLDER SERVER SENDS NO `age_source` AT ALL, and that is exactly the case where the ages
   // ARE the older kind. Testing equality with the failure string left the banner silent there.
   it('warns about the ages when the server is too old to say which kind they are', async () => {
+    // An older server sends NEITHER key. Deleting only one leaves a payload no server produces.
     const p = payload()
     delete p.age_source
-    expect((await render(p)).text()).toContain('could not be read just now')
+    delete p.degraded
+    expect((await render(p)).text()).toContain('ages are measured from the last message either way')
   })
 
   it('says what "Performed" counts, because the word alone reads as work done', async () => {
@@ -311,7 +360,7 @@ describe('Attention — search and filter', () => {
     const w = await type(await render(many()), 'zzzz')
     expect(rows(w)).toHaveLength(0)
     expect(w.text()).toContain('Nothing matches this filter')
-    expect(w.text()).toContain('3 deals are still waiting')
+    expect(w.text()).toContain('3 records are still waiting')
     expect(w.text()).not.toContain('have been answered')
   })
 

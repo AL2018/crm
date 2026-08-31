@@ -46,11 +46,17 @@
          `ink-gray-8`, which reads at 12px and still signals. Applied wherever this surface used
          amber for text, not just here — see `Attention.vue`. -->
     <span class="hidden w-28 shrink-0 md:block">
+      <!-- ⚠️ THREE STATES, NOT TWO. Anything that was not `waiting_on_us` read as "we wrote last",
+           so an `unknown` row — one whose direction could not be read at all — CLAIMED the customer
+           had been answered. That is the one thing this surface must never say wrongly. Not
+           reachable from the page today, but `get_attention` is whitelisted and returns those rows
+           when asked, and a label that lies when called directly will lie on the page eventually. -->
       <span class="rounded px-1.5 py-0.5 text-xs"
             :class="card.state === 'waiting_on_us'
               ? 'bg-surface-amber-1 font-medium text-ink-gray-8'
               : 'text-ink-gray-5'">
-        {{ card.state === 'waiting_on_us' ? __('they wrote last') : __('we wrote last') }}
+        {{ card.state === 'waiting_on_us' ? __('they wrote last')
+           : card.state === 'unknown' ? __('direction unreadable') : __('we wrote last') }}
       </span>
     </span>
 
