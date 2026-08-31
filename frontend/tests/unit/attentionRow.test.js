@@ -24,6 +24,47 @@ const card = (over = {}) => ({
   ...over,
 })
 
+/**
+ * ⚠️ `card()` DEFAULTS TO A DEAL, so every test that does not override `doctype` tests ONE
+ * population — which is `CC_STANDING_RULES §0.2i`, and is exactly how a broken Lead route survived
+ * 177 green tests. The block below walks a Lead down this component's paths.
+ */
+const lead = (over = {}) => card({
+  deal: 'CRM-LEAD-2026-00042', doctype: 'CRM Lead', who: 'Aberfeldy Barn',
+  status: 'New', critical: false, status_stale: false, ...over,
+})
+
+describe('AttentionRow — a Lead travels every path a Deal does', () => {
+  it('renders a Lead with its own status and age', () => {
+    const t = mount(AttentionRow, { props: { card: lead({ age_days: 14 }) } }).text()
+    expect(t).toContain('Aberfeldy Barn')
+    expect(t).toContain('New')
+    expect(t).toContain('14 days')
+  })
+
+  // ⚠️ A LEAD IS NEVER STALE — the band is a fact about CRM Deal Status, and a Lead's status plays
+  // no part in anything. The server never sets the flag for a Lead; this makes the row's silence
+  // on it a property rather than an accident of the data.
+  it('never shows the out-of-date marker on a Lead', () => {
+    expect(mount(AttentionRow, { props: { card: lead() } }).text()).not.toContain('out of date')
+  })
+
+  it('opens and expands like any other row', async () => {
+    const w = mount(AttentionRow, { props: { card: lead({ snippet: 'Do you do 200?' }) } })
+    await w.find('button').trigger('click')
+    expect(w.text()).toContain('Do you do 200?')
+    await w.find('[data-testid="attention-row"]').trigger('click')
+    expect(w.emitted('open')[0][0].doctype).toBe('CRM Lead')
+  })
+
+  it('says who wrote last on a Lead too', () => {
+    expect(mount(AttentionRow, { props: { card: lead({ state: 'waiting_on_us' }) } }).text())
+      .toContain('they wrote last')
+    expect(mount(AttentionRow, { props: { card: lead({ state: 'awaiting_them' }) } }).text())
+      .toContain('we wrote last')
+  })
+})
+
 describe('AttentionRow — rendering', () => {
   it('escapes every value that came from inbound mail', async () => {
     const hostile = '<script>alert(1)</script>'

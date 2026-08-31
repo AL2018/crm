@@ -145,6 +145,24 @@ describe('Attention — the round trip', () => {
     expect(w.text()).not.toContain('could not be read just now')
   })
 
+  // ⚠️ THE DEGRADED AND EMPTY STATES WITH A LEAD PRESENT — §0.2i names these as paths the second
+  // population must travel, and they were the two it did not.
+  it('keeps Leads on the list while a different read is degraded', async () => {
+    const w = await render(payload({
+      total: 2, degraded: ['status'],
+      cards: [card({ deal: 'D1', who: 'D1' }),
+              card({ deal: 'L1', who: 'L1', doctype: 'CRM Lead', critical: false })],
+    }))
+    expect(rows(w)).toHaveLength(2)
+    expect(w.text()).toContain('the order is not the usual one')
+  })
+
+  it('never claims the all-clear when the Lead read is the one that failed', async () => {
+    const w = await render(payload({ degraded: ['leads'], total: 0 }))
+    expect(w.text()).not.toContain('have been answered')
+    expect(w.text()).toContain('any enquiry waiting for a reply is missing')
+  })
+
   it('names which read failed, so the gap is specific rather than a shrug', async () => {
     expect((await render(payload({ degraded: ['status'] }))).text())
       .toContain('the order is not the usual one')
