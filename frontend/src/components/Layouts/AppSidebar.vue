@@ -173,17 +173,20 @@
 
   <template v-if="!mobile">
     <Settings />
-    <HelpModal
-      v-if="showHelpModal"
-      v-model="showHelpModal"
-      v-model:articles="articles"
-      :logo="CRMLogo"
-      :afterSkip="(step) => capture('onboarding_step_skipped_' + step)"
-      :afterSkipAll="() => capture('onboarding_steps_skipped')"
-      :afterReset="(step) => capture('onboarding_step_reset_' + step)"
-      :afterResetAll="() => capture('onboarding_steps_reset')"
-      docsLink="https://docs.frappe.io/crm"
-    />
+    <!-- lc: docked clear of the record side panel — see the <style> note below. -->
+    <div class="lc-help-dock">
+      <HelpModal
+        v-if="showHelpModal"
+        v-model="showHelpModal"
+        v-model:articles="articles"
+        :logo="CRMLogo"
+        :afterSkip="(step) => capture('onboarding_step_skipped_' + step)"
+        :afterSkipAll="() => capture('onboarding_steps_skipped')"
+        :afterReset="(step) => capture('onboarding_step_reset_' + step)"
+        :afterResetAll="() => capture('onboarding_steps_reset')"
+        docsLink="https://docs.frappe.io/crm"
+      />
+    </div>
     <IntermediateStepModal
       v-model="showIntermediateModal"
       :currentStep="currentStep"
@@ -756,3 +759,30 @@ const articles = ref([
   },
 ])
 </script>
+
+<style scoped>
+/* lc: the Help drawer must not sit on top of the record side panel.
+ *
+ * frappe-ui's HelpModal renders `fixed z-50 right-0 w-80` with `m-5`, which is the SAME
+ * footprint as the right-hand side panel on Lead / Deal / Contact pages. Measured on staging
+ * 24 September 2026: the drawer occupied x 1160-1480 and the side panel's own rows sat at
+ * x 1173-1472 underneath it, with `pointer-events: auto` on the drawer — so `elementFromPoint`
+ * at a panel row returned the drawer, not the row, and nothing in the side panel could be
+ * clicked.
+ *
+ * It is NOT only a problem when someone opens Help deliberately. `setUp()` in
+ * frappe-ui/frappe/Onboarding/onboarding.js does `showHelpModal.value =
+ * !isOnboardingStepsCompleted.value`, and that runs from this component's `onMounted` before the
+ * onboarding status has loaded — so on any fresh browser profile the drawer opens by itself over
+ * the side panel on the first CRM page rendered after login, and closes again a moment later.
+ * That is what a new VA meets on their first morning.
+ *
+ * Shifting it one panel-width left puts the two side by side instead of stacked. `22rem` is the
+ * panel's `w-80` (20rem) plus its `m-5` gutters. The auto-open behaviour itself is left alone —
+ * suppressing it would remove onboarding for genuinely new users, which is Alan's call, not a
+ * side effect of a layout fix.
+ */
+.lc-help-dock :deep(> div) {
+  right: 22rem;
+}
+</style>
